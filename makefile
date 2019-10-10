@@ -12,16 +12,25 @@ OBJECTS = $(patsubst %, $(OBJECTS_DIR)/%, $(_OBJECTS))
 DEPS = $(wildcard src/*.h)
 
 
-.PHONY: all clean
+.PHONY: all lib clean test
 
-#all: $(PROJECT)
+all:
+	@$(MAKE) lib --no-print-directory
+	@$(MAKE) test --no-print-directory
+
+lib: $(PROJECT)
+
+test:
+	@$(MAKE) -C tests 
+
+clean:
+	del .\src\obj\*.o
+	del libregex.a
+	del bin\test.exe
+
 
 $(OBJECTS_DIR)/%.o : src/%.c $(DEPS)
 	$(CC) -c -o $@ $< ${LIBS} $(CFLAGS) 
 
 $(PROJECT): $(OBJECTS)
 	ar -cvq $@ $^
-
-clean:
-	del ".\src\obj\*"
-	del *.a

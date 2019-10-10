@@ -6,7 +6,10 @@ src/obj/*.o
 *.swo
 
 # Test Executables
-*.exe
+bin/*.exe
+
+# Libraries
+*.a
 
 # Powershell scripts
 *.ps1
