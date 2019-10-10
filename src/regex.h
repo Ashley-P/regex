@@ -1,6 +1,6 @@
 #ifndef REGEX_H
 #define REGEX_H
 
-extern void meme();
+void regex(char *pattern, char *string);
 
 #endif
