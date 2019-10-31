@@ -1,5 +1,5 @@
 CC     = gcc
-CLFAGS = -Wall -g -O0 --always-make -Lsrc
+CLFAGS = -Wall -Wextra -Wpedantic -g -O0 --always-make -Lsrc
 OBJECTS_DIR = src/obj
 PROJECT = libregex.a
 
