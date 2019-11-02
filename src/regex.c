@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <string.h> // For strlen
 
+#include "regex_utils.h"
+
 
 #define MAX_BUFFER_SIZE 64
 
@@ -53,7 +55,7 @@ typedef struct Fragment_ {
 /***** Function Prototypes *****/
 State *pattern_to_fsm(char *pattern);
 Fragment pattern_fragmenter(char *pattern, int *str_pos);
-void collect_literal_string(Fragment *frag, char *pattern);
+int collect_literal_string(Fragment *frag, char *pattern);
 
 
 
@@ -70,7 +72,7 @@ void regex(char *pattern, char *string) {
 
 #ifndef REGEX_DEBUG
     if (start_state == NULL) {
-        printf("Something went wrong\n");
+        //printf("Something went wrong\n");
         exit(0);
     } else {
         printf("%p\n", start_state);
@@ -93,7 +95,7 @@ State *pattern_to_fsm(char *pattern) {
     }
 
 #ifndef REGEX_DEBUG
-    printf("frag_pos : %d", frags_pos);
+    printf("frag_pos : %d\n", frags_pos);
 #endif
 
 #if 0
@@ -115,7 +117,7 @@ Fragment pattern_fragmenter(char *pattern, int *str_pos) {
     switch (*(pattern + *str_pos)) {
         case '[': case '\\': case '^': case '$': case '.': case '|':
         case '?': case '*':  case '+': case '(': case ')':
-            printf("Meta characters aren't handled yet");
+            printf("Meta characters aren't handled yet, regex not completed");
             exit(0);
             break; // Is this necessary?
 
@@ -125,15 +127,13 @@ Fragment pattern_fragmenter(char *pattern, int *str_pos) {
 #endif
             frag.type = F_LITERAL_STR;
             // Collect the rest of the string in the fragment
-            collect_literal_string(&frag, (pattern + *str_pos));
+            *str_pos = collect_literal_string(&frag, (pattern + *str_pos));
             break;
     }
 
-    (*str_pos)++;
-#if 0
-    printf("str_pos = %d\t", *str_pos);
-    printf("char = %c\n", *(pattern + *str_pos));
-    (*str_pos)++;
+#ifndef REGEX_DEBUG
+    printf("Frag type : %d\n", frag.type);
+    printf("Frag str  : %s\n", frag.str);
 #endif
 
     return frag;
@@ -142,6 +142,14 @@ Fragment pattern_fragmenter(char *pattern, int *str_pos) {
 
 
 // Collects as much as possible into a fragment of type F_LITERAL_STR
-void collect_literal_string(Fragment *frag, char *pattern) {
+int collect_literal_string(Fragment *frag, char *pattern) {
+    int a = 0;
+    while (!ch_in_chs(*pattern, meta_characters) && *pattern != '\0') {
+#ifndef REGEX_DEBUG
+        printf("ch : %c\n", *pattern);
+#endif
+        frag->str[a++] = *pattern++;
+    }
 
+    return a;
 }
