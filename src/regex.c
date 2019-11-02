@@ -12,6 +12,8 @@
 
 #define MAX_BUFFER_SIZE 64
 
+static char *meta_characters = "[\\^$.|?*+()";
+
 
 /***** Structs *****/
 /**
@@ -51,6 +53,7 @@ typedef struct Fragment_ {
 /***** Function Prototypes *****/
 State *pattern_to_fsm(char *pattern);
 Fragment pattern_fragmenter(char *pattern, int *str_pos);
+void collect_literal_string(Fragment *frag, char *pattern);
 
 
 
@@ -89,6 +92,10 @@ State *pattern_to_fsm(char *pattern) {
         *(frags + frags_pos++) = pattern_fragmenter(pattern, &str_pos);
     }
 
+#ifndef REGEX_DEBUG
+    printf("frag_pos : %d", frags_pos);
+#endif
+
 #if 0
     State *start_state = malloc(sizeof(State));
     State *current_state = start_state;
@@ -100,9 +107,41 @@ State *pattern_to_fsm(char *pattern) {
 }
 
 
+// Fragments the pattern into manageable chunks to allow for easier creation of the FSM
 Fragment pattern_fragmenter(char *pattern, int *str_pos) {
-    //Fragment *rtn_frag = malloc(sizeof(Fragment));
+    Fragment frag;
+
+    // The character at str_pos will tell us what to do
+    switch (*(pattern + *str_pos)) {
+        case '[': case '\\': case '^': case '$': case '.': case '|':
+        case '?': case '*':  case '+': case '(': case ')':
+            printf("Meta characters aren't handled yet");
+            exit(0);
+            break; // Is this necessary?
+
+        default: // Every other character. The fragment type is a F_LITERAL_STRING
+#ifndef REGEX_DEBUG
+            printf("Literal character : %c\n", *(pattern + *str_pos));
+#endif
+            frag.type = F_LITERAL_STR;
+            // Collect the rest of the string in the fragment
+            collect_literal_string(&frag, (pattern + *str_pos));
+            break;
+    }
+
+    (*str_pos)++;
+#if 0
     printf("str_pos = %d\t", *str_pos);
     printf("char = %c\n", *(pattern + *str_pos));
     (*str_pos)++;
+#endif
+
+    return frag;
+}
+
+
+
+// Collects as much as possible into a fragment of type F_LITERAL_STR
+void collect_literal_string(Fragment *frag, char *pattern) {
+
 }
