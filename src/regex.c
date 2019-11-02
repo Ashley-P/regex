@@ -7,7 +7,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h> // For strlen
 
+
+#define MAX_BUFFER_SIZE 64
 
 
 /***** Structs *****/
@@ -16,10 +19,10 @@
  * e.g \w get's changed to a character set matching [a-zA-Z0-9_]
  */
 typedef enum {
-    LITERAL_CH = 1,
-    META_CH    = 2,
-    RANGE      = 4, // For character sets (e.g [A-Z])
-    FINAL      = 8, // Special State that ends the regex engine (Might not be needed actually)
+    S_LITERAL_CH = 1,
+    S_META_CH    = 2,
+    S_RANGE      = 4, // For character sets (e.g [A-Z])
+    S_FINAL      = 8, // Special State that ends the regex engine (Might not be needed actually)
 } StateType;
 
 typedef struct State_ {
@@ -32,22 +35,22 @@ typedef struct State_ {
 
 
 typedef enum {
-    LITERAL_STR = 1, // Strings that can easily be converted to states (e.g abc)
-    META_CH     = 2, // e.g . + ?
-    RANGE       = 4, // For character sets (e.g [A-Z])
-    SHORT_HAND  = 8, // e.g \w \b
-} FragType;
+    F_LITERAL_STR = 1, // Strings that can easily be converted to states (e.g abc)
+    F_META_CH     = 2, // e.g . + ?
+    F_RANGE       = 4, // For character sets (e.g [A-Z])
+    F_SHORT_HAND  = 8, // e.g \w \b
+} FragmentType;
 
-typedef struct Frag_ {
-    FragType type;
-    char *str;
-} Frag;
+typedef struct Fragment_ {
+    FragmentType type;
+    char str[MAX_BUFFER_SIZE];
+} Fragment;
 
 
 
 /***** Function Prototypes *****/
 State *pattern_to_fsm(char *pattern);
-Frag *pattern_fragmenter(char *pattern);
+Fragment pattern_fragmenter(char *pattern, int *str_pos);
 
 
 
@@ -70,17 +73,36 @@ void regex(char *pattern, char *string) {
         printf("%p\n", start_state);
     }
 #endif
-
 }
+
 
 // Converts the pattern supplied to a Finite State Machine
 State *pattern_to_fsm(char *pattern) {
     // First we break the pattern down into pattern fragments
-    
+    int pattern_len = strlen(pattern);
+    int str_pos = 0;
+    int frags_pos = 0;
+    Fragment *frags = malloc(sizeof(Fragment) * MAX_BUFFER_SIZE);
 
+    // Actually fragmenting the pattern
+    while (str_pos < pattern_len) {
+        *(frags + frags_pos++) = pattern_fragmenter(pattern, &str_pos);
+    }
 
+#if 0
     State *start_state = malloc(sizeof(State));
     State *current_state = start_state;
 
     return start_state;
+
+#endif
+    return NULL;
+}
+
+
+Fragment pattern_fragmenter(char *pattern, int *str_pos) {
+    //Fragment *rtn_frag = malloc(sizeof(Fragment));
+    printf("str_pos = %d\t", *str_pos);
+    printf("char = %c\n", *(pattern + *str_pos));
+    (*str_pos)++;
 }
