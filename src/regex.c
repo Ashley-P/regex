@@ -26,12 +26,18 @@ typedef enum {
     S_LITERAL_CH = 1,
     S_META_CH    = 2,
     S_RANGE      = 4, // For character sets (e.g [A-Z])
-    S_FINAL      = 8, // Special State that ends the regex engine (Might not be needed actually)
+    S_START      = 8, // Special State, might not be needed
+    S_FINAL      = 16, // Special State that ends the regex engine (Might not be needed actually)
 } StateType;
+
+typedef union StateData_ {
+    char ch; // for literal characters
+} StateData;
 
 typedef struct State_ {
     StateType type;
-    void *a;
+
+    union StateData_ data;
 
     struct State_ *next1;
     struct State_ *next2;
@@ -54,11 +60,16 @@ typedef struct Fragment_ {
 
 /***** Function Prototypes *****/
 State *pattern_to_fsm(char *pattern);
+
 Fragment pattern_fragmenter(char *pattern, int *str_pos);
 int collect_literal_string(Fragment *frag, char *pattern);
 
+void fragments_to_state(State *start, Fragment *frags, int fp);
+State *literal_str_to_states(Fragment frag);
 
 
+// regex specific utility functions
+State *create_state(StateType type, StateData data, State * const next1, State * const next2);
 
 
 void regex(char *pattern, char *string) {
@@ -77,6 +88,12 @@ void regex(char *pattern, char *string) {
     } else {
         printf("%p\n", start_state);
     }
+#endif
+
+    // TODO: Correctly free memory at some point
+
+#ifndef REGEX_DEBUG
+    printf("Regex engine reached the end!");
 #endif
 }
 
@@ -98,14 +115,14 @@ State *pattern_to_fsm(char *pattern) {
     printf("frag_pos : %d\n", frags_pos);
 #endif
 
-#if 0
-    State *start_state = malloc(sizeof(State));
-    State *current_state = start_state;
+    // Special States
+    StateData special_data = {.ch = '\0'};
+    State *start_state = create_state(S_START, special_data, NULL, NULL);
+    State *final_state = create_state(S_FINAL, special_data, NULL, NULL);
+
+    fragments_to_state(start_state, frags, frags_pos);
 
     return start_state;
-
-#endif
-    return NULL;
 }
 
 
@@ -150,6 +167,86 @@ int collect_literal_string(Fragment *frag, char *pattern) {
 #endif
         frag->str[a++] = *pattern++;
     }
+    frag->str[a] = '\0';
+
+    return a;
+}
+
+
+// Just switch statement right now
+void fragments_to_state(State *start, Fragment *frags, int fp) {
+    int a = 0; // frags pointer but for the local scope
+    int b = 0; // states pointer
+
+    // Keep a list of the states so we can link them together later
+    State **states = malloc(sizeof(State) * MAX_BUFFER_SIZE);
+
+    while (a < fp) {
+        switch ((frags + a)->type) {
+            case F_LITERAL_STR:
+                *(states + b++) = literal_str_to_states(*(frags + a));
+                break;
+            case F_META_CH: // We shouldn't hit these yet but to make sure
+            case F_RANGE:
+            case F_SHORT_HAND:
+            default:
+                printf("Case not handled in \"fragments_to_state\", regex not completed");
+                exit(0);
+                break;
+        }
+        a++;
+    }
+
+    // Here we would link the states together properly
+    printf("%d State chunk(s) need linking\n", b);
+}
+
+// Converts a fragment of type F_LITERAL_STR to some states
+State *literal_str_to_states(Fragment frag) {
+    int a = 0;
+    int frag_len = strlen(frag.str);
+
+    // frag_len is atleast 1 so we do the first state manually and set off the loop
+    // Since it's just a string, next1 of each state links up and next2 is left as NULL
+
+    // A reusable union
+    StateData data = {.ch = frag.str[a++]};
+    State *start = create_state(S_LITERAL_CH, data, NULL, NULL);
+
+
+    State *prev = start;
+    while (a < frag_len) {
+#ifndef REGEX_DEBUG
+        printf("%d\n", a);
+        printf("State type : %d\n", prev->type);
+        printf("State ch   : %c\n", prev->data.ch);
+#endif
+
+        data.ch = frag.str[a++];
+        prev->next1 = create_state(S_LITERAL_CH, data, NULL, NULL);
+        prev = prev->next1;
+    }
+
+#ifndef REGEX_DEBUG
+    // Print out the last state too
+    printf("%d\n", a);
+    printf("State type : %d\n", prev->type);
+    printf("State ch   : %c\n", prev->data.ch);
+#endif
+
+    return start;
+}
+
+
+
+
+/***** Utility functions *****/
+State *create_state(StateType type, StateData data, State * const next1, State * const next2) {
+    State *a = malloc(sizeof(State));
+    a->type = type;
+    a->data = data;
+    a->next1 = next1;
+    a->next2 = next2;
 
     return a;
 }
