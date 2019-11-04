@@ -244,16 +244,22 @@ State *literal_str_to_states(Fragment frag) {
 
 // Links the chunks together into the Finite State Machine
 State *link_state_chunks(State **states) {
-    int sc_len = 0; //state chunk length
+    int sc_len = 0; // state chunk length
     while ((*(states + sc_len))->type != S_FINAL) {
         sc_len++;
     }
     // Here we would link the states together properly
     printf("%d State chunk(s) need linking\n", sc_len);
 
+    // @NOTE Temporary fixing of the FSM so I can write the function that navigates it
+
     // Creating the start state
     StateData start_data = {.ch = '\0'};
     State *start_state = create_state(S_START, start_data, *(states), NULL);
+
+    State *s = start_state;
+    while (s->next1 != NULL) s = s->next1;
+    s->next1 = *(states + sc_len);
 
     /**
      * @NOTE: Some weird fiddling would have to happen if there was an alternation
