@@ -1,4 +1,4 @@
-CLFAGS = -Wall -g -O0 --always-make
+CFLAGS = -Wall -ggdb -Og
 
 all :
 	gcc -o ..\bin\test.exe test.c -L../ -lregex -I..\src $(CFLAGS)

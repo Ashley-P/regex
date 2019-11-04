@@ -1,5 +1,5 @@
 CC     = gcc
-CLFAGS = -Wall -Wextra -Wpedantic -g -O0 --always-make -Lsrc
+CFLAGS = -Wall -Wextra -Wpedantic -ggdb -Og -Lsrc
 OBJECTS_DIR = src/obj
 PROJECT = libregex.a
 
@@ -30,7 +30,7 @@ clean:
 
 
 $(OBJECTS_DIR)/%.o : src/%.c $(DEPS)
-	$(CC) -c -o $@ $< ${LIBS} $(CFLAGS) 
+	$(CC) -c -o $@ $< ${LIBS} $(CFLAGS)
 
 $(PROJECT): $(OBJECTS)
 	ar -cvq $@ $^

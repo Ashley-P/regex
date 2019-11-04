@@ -64,8 +64,10 @@ State *pattern_to_fsm(char *pattern);
 Fragment pattern_fragmenter(char *pattern, int *str_pos);
 int collect_literal_string(Fragment *frag, char *pattern);
 
-void fragments_to_state(State *start, Fragment *frags, int fp);
+State **fragments_to_state(Fragment *frags, int fp);
 State *literal_str_to_states(Fragment frag);
+
+State *link_state_chunks(State **states);
 
 
 // regex specific utility functions
@@ -83,10 +85,10 @@ void regex(char *pattern, char *string) {
 
 #ifndef REGEX_DEBUG
     if (start_state == NULL) {
-        //printf("Something went wrong\n");
+        printf("Something went wrong\n");
         exit(0);
     } else {
-        printf("%p\n", start_state);
+        printf("%p\n", (void *) start_state);
     }
 #endif
 
@@ -115,12 +117,9 @@ State *pattern_to_fsm(char *pattern) {
     printf("frag_pos : %d\n", frags_pos);
 #endif
 
-    // Special States
-    StateData special_data = {.ch = '\0'};
-    State *start_state = create_state(S_START, special_data, NULL, NULL);
-    State *final_state = create_state(S_FINAL, special_data, NULL, NULL);
+    State **state_chunks = fragments_to_state(frags, frags_pos);
+    State *start_state = link_state_chunks(state_chunks);
 
-    fragments_to_state(start_state, frags, frags_pos);
 
     return start_state;
 }
@@ -173,8 +172,10 @@ int collect_literal_string(Fragment *frag, char *pattern) {
 }
 
 
-// Just switch statement right now
-void fragments_to_state(State *start, Fragment *frags, int fp) {
+/**
+ * Returns a list of state chunks
+ */
+State **fragments_to_state(Fragment *frags, int fp) {
     int a = 0; // frags pointer but for the local scope
     int b = 0; // states pointer
 
@@ -197,8 +198,11 @@ void fragments_to_state(State *start, Fragment *frags, int fp) {
         a++;
     }
 
-    // Here we would link the states together properly
-    printf("%d State chunk(s) need linking\n", b);
+    // Create the final state here and put it in the array so we can size it up properly
+    StateData final_data = {.ch = '\0'};
+    *(states + b++) = create_state(S_FINAL, final_data, NULL, NULL);
+
+    return states;
 }
 
 // Converts a fragment of type F_LITERAL_STR to some states
@@ -235,6 +239,19 @@ State *literal_str_to_states(Fragment frag) {
 #endif
 
     return start;
+}
+
+
+// Links the chunks together into the Finite State Machine
+State *link_state_chunks(State **states) {
+    int sc_len = 0; //state chunk length
+    while ((*(states + sc_len))->type != S_FINAL) {
+        sc_len++;
+    }
+    // Here we would link the states together properly
+    printf("%d State chunk(s) need linking\n", sc_len);
+
+    return NULL;
 }
 
 

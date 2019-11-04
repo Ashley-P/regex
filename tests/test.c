@@ -4,7 +4,7 @@
 
 
 
-void main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
     if (argc != 3) {
         printf("Usage: test.exe <PATTERN> <STRING>");
         exit(0);
