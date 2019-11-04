@@ -69,12 +69,14 @@ State *literal_str_to_states(Fragment frag);
 
 State *link_state_chunks(State **states);
 
+char *perform_regex(State *start, char *string);
+
 
 // regex specific utility functions
 State *create_state(StateType type, StateData data, State * const next1, State * const next2);
 
 
-void regex(char *pattern, char *string) {
+char *regex(char *pattern, char *string) {
     // Echoing back for no real reason
 #ifndef REGEX_DEBUG
     printf("Pattern : \"%s\"\n", pattern);
@@ -82,21 +84,15 @@ void regex(char *pattern, char *string) {
 #endif
 
     State *start_state = pattern_to_fsm(pattern);
-
-#ifndef REGEX_DEBUG
-    if (start_state == NULL) {
-        printf("Something went wrong\n");
-        exit(0);
-    } else {
-        printf("%p\n", (void *) start_state);
-    }
-#endif
+    char *return_str = perform_regex(start_state, string);
 
     // TODO: Correctly free memory at some point
 
 #ifndef REGEX_DEBUG
-    printf("Regex engine reached the end!");
+    printf("Regex engine reached the end!\n");
+    printf("Returned string : %s", return_str);
 #endif
+    return return_str;
 }
 
 
@@ -112,10 +108,6 @@ State *pattern_to_fsm(char *pattern) {
     while (str_pos < pattern_len) {
         *(frags + frags_pos++) = pattern_fragmenter(pattern, &str_pos);
     }
-
-#ifndef REGEX_DEBUG
-    printf("frag_pos : %d\n", frags_pos);
-#endif
 
     State **state_chunks = fragments_to_state(frags, frags_pos);
     State *start_state = link_state_chunks(state_chunks);
@@ -271,6 +263,10 @@ State *link_state_chunks(State **states) {
 }
 
 
+// Naviagtes the FSM and (should) returns the matched sub-string
+char *perform_regex(State *start, char *string) {
+    return "";
+}
 
 
 /***** Utility functions *****/
