@@ -251,7 +251,17 @@ State *link_state_chunks(State **states) {
     // Here we would link the states together properly
     printf("%d State chunk(s) need linking\n", sc_len);
 
-    return NULL;
+    // Creating the start state
+    StateData start_data = {.ch = '\0'};
+    State *start_state = create_state(S_START, start_data, *(states), NULL);
+
+    /**
+     * @NOTE: Some weird fiddling would have to happen if there was an alternation
+     * But right now we can link the start state with the first state in the list
+     * Lots of other weird fiddling with states with the other meta characters too
+     */
+
+    return start_state;
 }
 
 
