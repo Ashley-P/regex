@@ -84,14 +84,23 @@ char *regex(char *pattern, char *string) {
 #endif
 
     State *start_state = pattern_to_fsm(pattern);
-    char *return_str = perform_regex(start_state, string);
+    
+    int str_len = strlen(string);
+    int sp = 0; // String pointer
+
+    char *return_str = "";
+    while (sp != str_len) {
+        printf("\n\nRegex Iteration %d\n\n", sp);
+        return_str = perform_regex(start_state, (string + sp));
+        if (return_str[0] == '\0')
+            sp++;
+        else
+            break;
+
+    }
 
     // TODO: Correctly free memory at some point
-
-#ifndef REGEX_DEBUG
-    printf("Regex engine reached the end!\n");
     printf("Returned string : %s", return_str);
-#endif
     return return_str;
 }
 
@@ -172,7 +181,7 @@ State **fragments_to_state(Fragment *frags, int fp) {
     int b = 0; // states pointer
 
     // Keep a list of the states so we can link them together later
-    State **states = malloc(sizeof(State) * MAX_BUFFER_SIZE);
+    State **states = malloc(sizeof(State *) * MAX_BUFFER_SIZE);
 
     while (a < fp) {
         switch ((frags + a)->type) {
@@ -265,6 +274,55 @@ State *link_state_chunks(State **states) {
 
 // Naviagtes the FSM and (should) returns the matched sub-string
 char *perform_regex(State *start, char *string) {
+    int str_len = strlen(string);
+    int sp = 0; // String Pointer
+    //int sbp = 0; // Stack Backtrack Pointer
+
+    //State **backtrack = malloc(sizeof(State *) * MAX_BUFFER_SIZE); // Keeping track of the backtracking positions
+    // @TODO: Construct the string that gets returned
+    State *s = start;
+
+    while (1) {
+        // Check to see we don't run off the edge of the string
+        if (sp > str_len) {
+            printf("Regex Failed: End of string before end of FSM\n");
+            return "";
+        }
+
+        switch(s->type) {
+            case S_START:
+                // This state exists to be a back track in case of alternations etc
+                s = s->next1;
+                break;
+            case S_LITERAL_CH:
+                if (s->data.ch == *(string + sp)) {
+
+#ifndef REGEX_DEBUG
+                    printf("State %p, Type %d, StateData \"%c\" matched with character \"%c\"\n",
+                            (void *) s, s->type, s->data.ch, *(string + sp));
+#endif
+                    s = s->next1;
+                    sp++;
+                } else {
+                    // @NOTE @TODO: Normally we would backtrack here
+#ifndef REGEX_DEBUG
+                    // @TODO: Come up with a way better debug message
+                    printf("Regex Failed: pattern \"%c\" does not match string \"%c\"\n",
+                            s->data.ch, *(string + sp));
+#endif
+                    return "";
+                }
+                break;
+            case S_FINAL:
+                return("Completed FSM");
+                break;
+            default:
+                printf("Error in switch statement in \"perform_regex\" on line %d:\n", __LINE__);
+                printf("Unknown/Unhandled type %d\n", start->type);
+                break;
+        }
+    }
+
     return "";
 }
 
