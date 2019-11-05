@@ -121,6 +121,7 @@ State *pattern_to_fsm(char *pattern) {
     State **state_chunks = fragments_to_state(frags, frags_pos);
     State *start_state = link_state_chunks(state_chunks);
 
+    free(frags);
 
     return start_state;
 }
@@ -274,7 +275,7 @@ State *link_state_chunks(State **states) {
 
 // Naviagtes the FSM and (should) returns the matched sub-string
 char *perform_regex(State *start, char *string) {
-    int str_len = strlen(string);
+    //int str_len = strlen(string) + 1; // We include the terminating character
     int sp = 0; // String Pointer
     //int sbp = 0; // Stack Backtrack Pointer
 
@@ -283,11 +284,12 @@ char *perform_regex(State *start, char *string) {
     State *s = start;
 
     while (1) {
-        // Check to see we don't run off the edge of the string
+#if 0 // Might not be needed since characters won't match with the terminating character
         if (sp > str_len) {
             printf("Regex Failed: End of string before end of FSM\n");
             return "";
         }
+#endif
 
         switch(s->type) {
             case S_START:
