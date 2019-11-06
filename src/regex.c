@@ -140,8 +140,8 @@ Fragment pattern_fragmenter(char *pattern, int *str_pos) {
 
     // The character at str_pos will tell us what to do
     switch (*(pattern + *str_pos)) {
-        case '[': case '\\': case '^': case '$': case '.': case '|':
-        case '?': case '*':  case '+': case '(': case ')':
+        case '[': case '\\': case '^': case '$': case '.': case '|': case '?':
+        case '*':  case '+': case '(': case ')': case '[': case ']':
             printf("Meta characters aren't handled yet, regex not completed");
             exit(0);
             break; // Is this necessary?
