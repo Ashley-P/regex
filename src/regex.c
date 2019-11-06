@@ -74,6 +74,7 @@ char *perform_regex(State *start, char *string);
 
 // regex specific utility functions
 State *create_state(StateType type, StateData data, State * const next1, State * const next2);
+void delete_states(State *s, State **list, int *lp);
 
 
 char *regex(char *pattern, char *string) {
@@ -99,7 +100,12 @@ char *regex(char *pattern, char *string) {
 
     }
 
+
     // TODO: Correctly free memory at some point
+    int lp = 0;
+    State **delete_list = malloc(sizeof(State *) * MAX_BUFFER_SIZE);
+    delete_states(start_state, delete_list, &lp);
+    free(delete_list);
     printf("Returned string : %s", return_str);
     return return_str;
 }
@@ -122,6 +128,7 @@ State *pattern_to_fsm(char *pattern) {
     State *start_state = link_state_chunks(state_chunks);
 
     free(frags);
+    free(state_chunks); // Only free's up the list that holds the states, not the states themselves
 
     return start_state;
 }
@@ -338,4 +345,26 @@ State *create_state(StateType type, StateData data, State * const next1, State *
     a->next2 = next2;
 
     return a;
+}
+
+/**
+ * Frees the states by recursively going through them all and freeing if they are not on the list
+ */
+void delete_states(State *s, State **list, int *lp) {
+    int a = 0;
+    while (a < *lp) {
+        if (s == *(list + a)) {
+            return;
+        }
+        a++;
+    }
+    if (s->next1) delete_states(s->next1, list, lp);
+    if (s->next2) delete_states(s->next1, list, lp);
+    *(list + (*lp)++) = s;
+    free(s);
+
+#ifndef REGEX_DEBUG
+    printf("State(s) freed : %d\n", *lp);
+#endif
+
 }
