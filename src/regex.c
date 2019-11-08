@@ -52,15 +52,31 @@ typedef struct State_ {
 } State;
 
 
+
+typedef struct PtrList_ {
+    int n;
+    State **l[MAX_BUFFER_SIZE];
+} PtrList;
+
+typedef struct Fragment_ {
+    struct State_ *start;
+    PtrList *ptrs;
+} Fragment;
+
+
+
+
 /***** Function Prototypes *****/
 State *pattern_to_fsm(char *pattern);
 
 char *perform_regex(State *start, char *string);
 
-
 // regex specific utility functions
 State *create_state(StateType type, StateData data, State * const next1, State * const next2);
-void delete_states(State *s, State **list, int *lp);
+Fragment create_fragment(State *s, PtrList *ptrs);
+PtrList *create_list(State **s);
+void point_ptrs(PtrList *list, State *s);
+PtrList *cat_list(PtrList *l1, PtrList *l2);
 
 
 char *regex(char *pattern, char *string) {
@@ -71,32 +87,8 @@ char *regex(char *pattern, char *string) {
 #endif
 
     State *start_state = pattern_to_fsm(pattern);
-    
-#if 0
-    int str_len = strlen(string);
-    int sp = 0; // String pointer
+    char *return_str = perform_regex(start_state, string);
 
-    char *return_str = "";
-    while (sp != str_len) {
-#ifndef REGEX_DEBUG
-        printf("\n\nRegex Iteration %d\n\n", sp);
-#endif
-        return_str = perform_regex(start_state, (string + sp));
-        if (return_str[0] == '\0')
-            sp++;
-        else
-            break;
-
-    }
-
-
-    // TODO: Correctly free memory at some point
-    int lp = 0;
-    State **delete_list = malloc(sizeof(State *) * MAX_BUFFER_SIZE);
-    delete_states(start_state, delete_list, &lp);
-    free(delete_list);
-#endif
-    char *return_str = "";
 #ifndef REGEX_DEBUG
     printf("Returned string : %s", return_str);
 #endif
@@ -106,68 +98,70 @@ char *regex(char *pattern, char *string) {
 
 // Converts the pattern supplied to a Finite State Machine
 State *pattern_to_fsm(char *pattern) {
-    int pattern_len = strlen(pattern);
-    int str_pos = 0;
+    //int pattern_len = strlen(pattern);
+    char *sp = pattern;
 
-    return NULL;
+    Fragment stack[MAX_BUFFER_SIZE];
+    Fragment *stackp = stack;
+    Fragment a, b;
+    State *s;
+
+    StateData data = {.ch = '\0'};
+    s = create_state(S_START, data, NULL, NULL);
+    *stackp++ = create_fragment(s, create_list(&s->next1));
+
+    while (*sp != '\0') {
+        switch(*sp) {
+            // Any literal characters
+            default:
+                // Creating the state
+                data.ch = *sp;
+                s = create_state(S_LITERAL_CH, data, NULL, NULL);
+
+                // Adding it to the previous fragment
+                a = *--stackp;
+                point_ptrs(a.ptrs, s);
+                *stackp++ = create_fragment(a.start, create_list(&s->next1));
+        }
+        sp++;
+    }
+
+    a = *--stackp;
+    data.ch = '\0';
+    point_ptrs(a.ptrs, create_state(S_FINAL, data, NULL, NULL));
+
+    return a.start;
 }
+
 
 // Naviagtes the FSM and (should) returns the matched sub-string
 char *perform_regex(State *start, char *string) {
-    //int str_len = strlen(string) + 1; // We include the terminating character
-    int sp = 0; // String Pointer
-    //int sbp = 0; // Stack Backtrack Pointer
-
-    //State **backtrack = malloc(sizeof(State *) * MAX_BUFFER_SIZE); // Keeping track of the backtracking positions
-    // @TODO: Construct the string that gets returned
+    // We would do some storage of states that we can backtrack to
     State *s = start;
+    printf("\n");
 
-    while (1) {
-#if 0 // Might not be needed since characters won't match with the terminating character
-        if (sp > str_len) {
-            printf("Regex Failed: End of string before end of FSM\n");
-            return "";
-        }
-#endif
-
-        switch(s->type) {
-            case S_START:
-                // This state exists to be a back track in case of alternations etc
-                s = s->next1;
-                break;
+    while(1) {
+        switch(s->next1->type) {
             case S_LITERAL_CH:
-                if (s->data.ch == *(string + sp)) {
-
-#ifndef REGEX_DEBUG
-                    printf("State %p, Type %d, StateData \"%c\" matched with character \"%c\"\n",
-                            (void *) s, s->type, s->data.ch, *(string + sp));
-#endif
+                if (s->next1->data.ch == *string) {
+                    printf("State %p\tLiteral character \"%c\" matched with \"%c\"\n",
+                            (void *) s->next1, s->next1->data.ch, *string);
                     s = s->next1;
-                    sp++;
+                    string++;
                 } else {
-                    // @NOTE @TODO: Normally we would backtrack here
-#ifndef REGEX_DEBUG
-                    // @TODO: Come up with a way better debug message
-                    printf("Regex Failed: pattern \"%c\" does not match string \"%c\"\n",
-                            s->data.ch, *(string + sp));
-#endif
-                    return "";
+                    // Backtrack
+                    printf("State %p\tLiteral character \"%c\" didn't match with \"%c\"\n",
+                            (void *) s->next1, s->next1->data.ch, *string);
+                    exit(0);
                 }
                 break;
             case S_FINAL:
-#ifndef REGEX_DEBUG
-                return("Completed FSM");
-#endif
-                break;
+                return "Completed Matching successfully";
             default:
-#ifndef REGEX_DEBUG
-                printf("Error in switch statement in \"perform_regex\" on line %d:\n", __LINE__);
-                printf("Unknown/Unhandled type %d\n", start->type);
-#endif
+                printf("Error in perform regex: default hit on the switch statement\n");
                 break;
         }
     }
-
     return "";
 }
 
@@ -175,32 +169,47 @@ char *perform_regex(State *start, char *string) {
 /***** Utility functions *****/
 State *create_state(StateType type, StateData data, State * const next1, State * const next2) {
     State *a = malloc(sizeof(State));
-    a->type = type;
-    a->data = data;
+    a->type  = type;
+    a->data  = data;
     a->next1 = next1;
     a->next2 = next2;
 
     return a;
 }
 
-/**
- * Frees the states by recursively going through them all and freeing if they are not on the list
- */
-void delete_states(State *s, State **list, int *lp) {
-    int a = 0;
-    while (a < *lp) {
-        if (s == *(list + a)) {
-            return;
-        }
-        a++;
+Fragment create_fragment(State *s, PtrList *ptrs) {
+    Fragment frag;
+    frag.start = s;
+    frag.ptrs  = ptrs;
+
+    return frag;
+}
+
+// Creates the pointer list with the state provided
+PtrList *create_list(State **s) {
+    PtrList *l = malloc(sizeof(PtrList));
+    (l->l)[0] = s;
+    l->n = 1;
+
+    return l;
+}
+
+// Points the pointers to the state
+void point_ptrs(PtrList *list, State *s) {
+    for (int i = 0; i < list->n; i++)
+        *(list->l)[i] = s;
+}
+
+// Concatenates two pointer lists together
+PtrList *cat_list(PtrList *l1, PtrList *l2) {
+    PtrList *l = malloc(sizeof(PtrList));
+
+    // We can add entries from both lists in the same loop
+    for (int i = 0; i < l1->n; i++) {
+        (l->l)[l->n]         = (l1->l)[i];
+        (l->l)[l->n + l1->n] = (l2->l)[i];
+        (l->n)++;
     }
-    if (s->next1) delete_states(s->next1, list, lp);
-    if (s->next2) delete_states(s->next1, list, lp);
-    *(list + (*lp)++) = s;
-    free(s);
 
-#ifndef REGEX_DEBUG
-    printf("State(s) freed : %d\n", *lp);
-#endif
-
+    return l;
 }
