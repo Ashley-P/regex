@@ -1,6 +1,9 @@
 /**
  * Features currently implemented:
- * None
+ * Matching literal characters
+ * 
+ * Metacharacters:
+ * . (Any char) 
  */
 
 
@@ -159,6 +162,16 @@ static inline int backtrack(State **l, int *p, State **s) {
 }
 #endif
 
+// Grouping together some common statements
+static inline void next_state(State **l, int *p, State **s, char **string) {
+    if ((*s)->next2) {
+        l[*p++] = (*s)->next2;
+    }
+
+    *s = (*s)->next1;
+    (*string)++;
+}
+
 // Naviagtes the FSM and (should) returns the matched sub-string
 char *perform_regex(State *start, char *string) {
     // We would do some storage of states that we can backtrack to
@@ -173,8 +186,8 @@ char *perform_regex(State *start, char *string) {
 
     while(1) {
         switch(s->type) {
-            case S_META_CH:
 
+            case S_META_CH:
                 switch (s->data.meta) {
                     case M_ANY_CH:
                         // Any ch matches anything that isn't '\0'
@@ -182,12 +195,8 @@ char *perform_regex(State *start, char *string) {
                             printf("State %p\tMeta character '.' (M_ANY_CH) matched with \"%c\"\n",
                                     (void *) s, *string);
 
-                            if (s->next2) {
-                                backtrack_list[btp++] = s->next2;
-                            }
+                            next_state(backtrack_list, &btp, &s, &string);
 
-                            s = s->next1;
-                            string++;
                         } else {
                             printf("State %p\tMeta character '.' (M_ANY_CH) didn't match with \"%c\"\n",
                                     (void *) s, *string);
@@ -205,12 +214,8 @@ char *perform_regex(State *start, char *string) {
                     printf("State %p\tLiteral character \"%c\" matched with \"%c\"\n",
                             (void *) s, s->data.ch, *string);
 
-                    if (s->next2) {
-                        backtrack_list[btp++] = s->next2;
-                    }
+                    next_state(backtrack_list, &btp, &s, &string);
 
-                    s = s->next1;
-                    string++;
                 } else {
                     // Backtrack
                     printf("State %p\tLiteral character \"%c\" didn't match with \"%c\"\n",
@@ -218,8 +223,10 @@ char *perform_regex(State *start, char *string) {
                     return "";
                 }
                 break;
+
             case S_FINAL:
                 return "Completed Matching successfully";
+
             default:
                 printf("Error in perform regex: default hit on the switch statement\n");
                 break;
