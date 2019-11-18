@@ -14,7 +14,7 @@
 
 #define MAX_BUFFER_SIZE 64
 
-static char *meta_characters = "[\\^$.|?*+()";
+//static char *meta_characters = "[\\^$.|?*+()";
 
 
 /***** Datatypes *****/
@@ -90,7 +90,10 @@ char *regex(char *pattern, char *string) {
     char *return_str = perform_regex(start_state, string);
 
 #ifndef REGEX_DEBUG
-    printf("Returned string : %s", return_str);
+    if (*return_str == '\0')
+        printf("Regex Failed\n");
+    else
+        printf("Returned string : %s\n", return_str);
 #endif
     return return_str;
 }
@@ -112,8 +115,18 @@ State *pattern_to_fsm(char *pattern) {
 
     while (*sp != '\0') {
         switch(*sp) {
-            // Any literal characters
-            default:
+            case '.': // Any character
+                // Creating the state
+                data.meta = M_ANY_CH;
+                s = create_state(S_META_CH, data, NULL, NULL);
+
+                // Adding it to the previous fragment
+                a = *--stackp;
+                point_ptrs(a.ptrs, s);
+                *stackp++ = create_fragment(a.start, create_list(&s->next1));
+                break;
+
+            default: // Any literal characters
                 // Creating the state
                 data.ch = *sp;
                 s = create_state(S_LITERAL_CH, data, NULL, NULL);
@@ -122,6 +135,7 @@ State *pattern_to_fsm(char *pattern) {
                 a = *--stackp;
                 point_ptrs(a.ptrs, s);
                 *stackp++ = create_fragment(a.start, create_list(&s->next1));
+                break;
         }
         sp++;
     }
@@ -134,25 +148,74 @@ State *pattern_to_fsm(char *pattern) {
 }
 
 
+#if 0
+// Tries to backtrack, 
+static inline int backtrack(State **l, int *p, State **s) {
+    printf("Attempting to backtrack . . .\n");
+    if (*p == 0) {
+        printf("Couldn't backtrack.\n");
+        return 0;
+    }
+}
+#endif
+
 // Naviagtes the FSM and (should) returns the matched sub-string
 char *perform_regex(State *start, char *string) {
     // We would do some storage of states that we can backtrack to
-    State *s = start;
+    State *s = start->next1;
+    State *backtrack_list[MAX_BUFFER_SIZE];
+    int btp = 0;
+    if (start->next2) {
+        backtrack_list[btp++] = start->next2;
+    }
+
     printf("\n");
 
     while(1) {
-        switch(s->next1->type) {
+        switch(s->type) {
+            case S_META_CH:
+
+                switch (s->data.meta) {
+                    case M_ANY_CH:
+                        // Any ch matches anything that isn't '\0'
+                        if (*string != '\0') {
+                            printf("State %p\tMeta character '.' (M_ANY_CH) matched with \"%c\"\n",
+                                    (void *) s, *string);
+
+                            if (s->next2) {
+                                backtrack_list[btp++] = s->next2;
+                            }
+
+                            s = s->next1;
+                            string++;
+                        } else {
+                            printf("State %p\tMeta character '.' (M_ANY_CH) didn't match with \"%c\"\n",
+                                    (void *) s, *string);
+                            return ""; // Backtracking goes here
+                        }
+                        break;
+                    default:
+                        printf("Error in perform regex: Unknown MetaChType\n");
+                        break;
+                }
+                break;
+
             case S_LITERAL_CH:
-                if (s->next1->data.ch == *string) {
+                if (s->data.ch == *string) {
                     printf("State %p\tLiteral character \"%c\" matched with \"%c\"\n",
-                            (void *) s->next1, s->next1->data.ch, *string);
+                            (void *) s, s->data.ch, *string);
+
+                    if (s->next2) {
+                        backtrack_list[btp++] = s->next2;
+                    }
+
                     s = s->next1;
                     string++;
                 } else {
                     // Backtrack
                     printf("State %p\tLiteral character \"%c\" didn't match with \"%c\"\n",
-                            (void *) s->next1, s->next1->data.ch, *string);
-                    exit(0);
+                            (void *) s, s->data.ch, *string);
+                    return "";
                 }
                 break;
             case S_FINAL:
