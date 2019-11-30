@@ -27,7 +27,7 @@
  */
 typedef enum {
     M_ANY_CH = 1, // .
-} MetaChTypes;
+} MetaChType;
 
 typedef enum {
     // Special States
@@ -43,7 +43,7 @@ typedef enum {
 
 typedef union StateData_ {
     char ch; // for literal characters
-    MetaChTypes meta; // Meta character types
+    MetaChType meta; // Meta character types
 } StateData;
 
 typedef struct State_ {
@@ -115,6 +115,7 @@ StateList *append_lists(StateList *a, StateList *b);
 
 char *state_type_to_string(StateType type);
 char *token_type_to_string(TokenType type);
+char *meta_ch_type_to_string(MetaChType type);
 
 
 
@@ -133,7 +134,7 @@ char *regex(char *pattern, char *string) {
     if (*return_str == '\0')
         printf("Regex Failed\n");
     else
-        printf("Returned string : %s\n", return_str);
+        printf("Returned string : %s\n\n", return_str);
     return return_str;
 }
 
@@ -159,7 +160,7 @@ Token *tokenize_pattern(char *pattern) {
                 *tp++ = t;
                 break;
         }
-        printf("TokenType = %s : ch = %c\n", token_type_to_string((tp - 1)->type), (tp - 1)->ch);
+        printf("TokenType = %s, ch = %c\n", token_type_to_string((tp - 1)->type), (tp - 1)->ch);
     }
 
     t.type = T_FINAL;
@@ -191,12 +192,26 @@ State *parse_tokens(Token *tokens) {
 
     while (tokens->type != T_FINAL) {
         switch (tokens->type) { 
+            case T_META_CH:
+                data.meta = M_ANY_CH;
+                s = create_state(S_META_CH, data, NULL, NULL);
+                *fp++ = create_fragment(s, create_state_list(&s->next1));
+
+                printf("State %p, Type = %s, ch = %s\n",
+                        (void *) s, state_type_to_string(s->type), meta_ch_type_to_string(s->data.meta));
+
+                fp = link_fragments(fp, tokens);
+                tokens++;
+                break;
+
             case T_LITERAL_CH:
                 data.ch = tokens->ch;
                 s = create_state(S_LITERAL_CH, data, NULL, NULL);
                 *fp++ = create_fragment(s, create_state_list(&s->next1));
+
                 printf("State %p, Type = %s, ch = %c\n",
                         (void *) s, state_type_to_string(s->type), s->data.ch);
+
                 // Concatanation of the top 2 fragments on the stack happen if the next token isn't
                 // one that alters the flow of the FSM
                 fp = link_fragments(fp, tokens);
@@ -249,6 +264,27 @@ char *perform_regex(State *start, char *string) {
         printf("State %p, ", (void *) s);
 
         switch (s->type) {
+            case S_META_CH:
+
+                switch (s->data.meta) {
+                    // Matches anything but the null character
+                    case M_ANY_CH:
+                        if (*string != '\0') {
+                            printf("Meta Character \".\" matched character \"%c\" in string \n", *string);
+                            *sp++ = *string++;
+                            s = s->next1;
+                        } else {
+                            printf("Meta Character \".\" did not match character \"%c\" in string \n", *string);
+                            return "";
+                        }
+                        break;
+                    default:
+                        printf("Shouldn't hit this\n");
+                        return "";
+                }
+
+                break;
+
             case S_LITERAL_CH:
                 if (s->data.ch == *string) {
                     printf("Literal character \"%c\" matched character \"%c\" in string\n",
@@ -268,7 +304,7 @@ char *perform_regex(State *start, char *string) {
                 return rtn_str;
             default:
                 printf("Shouldn't hit this\n");
-                break;
+                return "";
         }
     }
 }
@@ -351,5 +387,12 @@ char *token_type_to_string(TokenType type) {
         case T_GREEDY_PLUS: return "T_GREEDY_PLUS";
         case T_LAZY_PLUS: return "T_LAZY_PLUS";
         default: return "Unhandled case in token_type_to_string";
+    }
+}
+
+char *meta_ch_type_to_string(MetaChType type) {
+    switch (type) {
+        case M_ANY_CH: return "M_ANY_CH";
+        default: return "Unhandled case in meta_ch_type_to_string";
     }
 }
