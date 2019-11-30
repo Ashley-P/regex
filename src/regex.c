@@ -93,6 +93,12 @@ typedef struct Token_ {
     char ch;
 } Token;
 
+typedef struct BacktrackData_ {
+    char *string;
+    char *sp;
+    State *s;
+} BacktrackData;
+
 
 
 
@@ -106,12 +112,12 @@ char *perform_regex(State *start, char *string);
 
 /***** Utility functions *****/
 State *create_state(StateType type, StateData data, State * const next1, State * const next2);
-static inline void next_state(State **l, int *p, State **s, char **string);
-
 Fragment create_fragment(State *s, StateList *l);
 void point_state_list(StateList *l, State *a);
 StateList *create_state_list(State **first);
 StateList *append_lists(StateList *a, StateList *b);
+
+BacktrackData create_backtrack_data(char *string, char *sp, State *s);
 
 char *state_type_to_string(StateType type);
 char *token_type_to_string(TokenType type);
@@ -157,6 +163,18 @@ Token *tokenize_pattern(char *pattern) {
 
     while (*pattern != '\0') {
         switch (*pattern) {
+            case '+':
+                // Peek the next character to determine whether it's lazy or greedy
+                if (*(pattern + 1) == '?') {
+                    t.type = T_LAZY_PLUS;
+                    pattern++;
+                } else
+                    t.type = T_GREEDY_PLUS;
+
+                t.ch = '+';
+                *tp++ = t;
+                pattern++;
+                break;
             case '.':
                 t.type = T_META_CH;
                 t.ch = *pattern++;
@@ -202,6 +220,30 @@ State *parse_tokens(Token *tokens) {
 
     while (tokens->type != T_FINAL) {
         switch (tokens->type) { 
+            case T_GREEDY_PLUS:
+                a = *--fp;
+                data.ch = '\0';
+
+                s = create_state(S_NODE, data, a.start, NULL);
+                point_state_list(a.list, s);
+                *fp++ = create_fragment(a.start, create_state_list(&s->next2));
+                fp = link_fragments(fp, tokens);
+                tokens++;
+                printf("FSM flow altered, new node state %p created\n", (void *) s);
+                break;
+
+            case T_LAZY_PLUS:
+                a = *--fp;
+                data.ch = '\0';
+
+                s = create_state(S_NODE, data, NULL, a.start);
+                point_state_list(a.list, s);
+                *fp++ = create_fragment(a.start, create_state_list(&s->next1));
+                fp = link_fragments(fp, tokens);
+                tokens++;
+                printf("FSM flow altered, new node state %p created\n", (void *) s);
+                break;
+
             case T_META_CH:
                 data.meta = M_ANY_CH;
                 s = create_state(S_META_CH, data, NULL, NULL);
@@ -266,9 +308,18 @@ Fragment *link_fragments(Fragment *fp, Token *tokens) {
 char *perform_regex(State *start, char *string) {
     printf("\n----- Navigating Finite State Machine -----\n");
 
+    BacktrackData backtrack_stack[MAX_BUFFER_SIZE];
+    BacktrackData *btp = backtrack_stack;
+    BacktrackData b;
+    int do_backtrack = 0;
+
     State *s = start->next1; // This is the state we are checking
     char *rtn_str = malloc(sizeof(char) * MAX_BUFFER_SIZE);
     char *sp = rtn_str;
+
+    if (start->next2)
+        *btp++ = create_backtrack_data(string, sp, start->next2);
+
 
     while (1) {
         printf("State %p, ", (void *) s);
@@ -281,11 +332,15 @@ char *perform_regex(State *start, char *string) {
                     case M_ANY_CH:
                         if (*string != '\0') {
                             printf("Meta Character \".\" matched character \"%c\" in string \n", *string);
+
                             *sp++ = *string++;
+                            if (s->next2)
+                                *btp++ = create_backtrack_data(string, sp, s->next2);
+
                             s = s->next1;
                         } else {
                             printf("Meta Character \".\" did not match character \"%c\" in string \n", *string);
-                            return "";
+                            do_backtrack = 1;
                         }
                         break;
                     default:
@@ -299,24 +354,52 @@ char *perform_regex(State *start, char *string) {
                 if (s->data.ch == *string) {
                     printf("Literal character \"%c\" matched character \"%c\" in string\n",
                             s->data.ch, *string);
+
                     *sp++ = *string++;
+                    if (s->next2)
+                        *btp++ = create_backtrack_data(string, sp, s->next2);
                     s = s->next1;
                 } else {
                     // Backtracking would happen here
                     printf("Literal character \"%c\" did not match character \"%c\" in string\n",
                             s->data.ch, *string);
-                    return "";
+                    do_backtrack = 1;
                 }
                 break;
+
+            // Specials
             case S_FINAL:
                 printf("Match completed!\n");
                 *sp++ = '\0';
                 return rtn_str;
+            
+            case S_NODE:
+                printf("Node State, next1 = %p, next2 = %p\n", (void *) s->next1, (void *) s->next2);
+                if (s->next2)
+                    *btp++ = create_backtrack_data(string, sp, s->next2);
+                s = s->next1;
+                break;
             default:
                 printf("Shouldn't hit this\n");
                 return "";
+        } // Switch
+
+        if (do_backtrack) {
+            printf("\nAttempting to backtrack\n");
+
+            if (backtrack_stack == btp) {
+                printf("Stack empty, unable to backtrack\n");
+                return "";
+            } else {
+                b = *--btp;
+                string = b.string;
+                sp = b.sp;
+                s = b.s;
+                printf("Backtrack complete: Starting at state %p\n\n", (void *) s);
+                do_backtrack = 0;
+            }
         }
-    }
+    } // While
 }
 
 
@@ -329,16 +412,6 @@ State *create_state(StateType type, StateData data, State * const next1, State *
     a->next2 = next2;
 
     return a;
-}
-
-// Grouping together some common statements
-static inline void next_state(State **l, int *p, State **s, char **string) {
-    if ((*s)->next2) {
-        l[*p++] = (*s)->next2;
-    }
-
-    *s = (*s)->next1;
-    (*string)++;
 }
 
 Fragment create_fragment(State *s, StateList *l) {
@@ -374,6 +447,15 @@ StateList *append_lists(StateList *a, StateList *b) {
 
     free(a);
     free(b);
+    return rtn;
+}
+
+BacktrackData create_backtrack_data(char *string, char *sp, State *s) {
+    BacktrackData rtn;
+    rtn.string = string;
+    rtn.sp = sp;
+    rtn.s = s;
+
     return rtn;
 }
 
