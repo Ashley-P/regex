@@ -69,14 +69,17 @@ typedef struct Fragment_ {
 
 
 typedef enum {
-    T_LITERAL_CH  = 0x00001,
-    T_META_CH     = 0x00010, // For non state altering meta characters e.g '.'
-    T_FINAL       = 0x00100,
+    T_LITERAL_CH  = 0x1,
+    T_META_CH     = 0x10, // For non state altering meta characters e.g '.'
+    T_FINAL       = 0x100,
 
-    T_GREEDY_PLUS = 0x01000, // '+'
+    T_GREEDY_PLUS = 0x1000, // '+'
     T_LAZY_PLUS   = 0x10000,   // '+?'
 
-    T_STATE_ALTERING = T_GREEDY_PLUS | T_LAZY_PLUS,
+    T_GREEDY_STAR = 0x100000,
+    T_LAZY_STAR   = 0x1000000,
+
+    T_STATE_ALTERING = T_GREEDY_PLUS | T_LAZY_PLUS | T_GREEDY_STAR | T_LAZY_STAR,
 #if 0
     // Parentheses
     T_OPEN_P,
@@ -163,6 +166,19 @@ Token *tokenize_pattern(char *pattern) {
 
     while (*pattern != '\0') {
         switch (*pattern) {
+            case '*':
+                // Peek the next character to determine whether it's lazy or greedy
+                if (*(pattern + 1) == '?') {
+                    t.type = T_LAZY_STAR;
+                    pattern++;
+                } else
+                    t.type = T_GREEDY_STAR;
+
+                t.ch = '*';
+                *tp++ = t;
+                pattern++;
+                break;
+
             case '+':
                 // Peek the next character to determine whether it's lazy or greedy
                 if (*(pattern + 1) == '?') {
@@ -175,6 +191,7 @@ Token *tokenize_pattern(char *pattern) {
                 *tp++ = t;
                 pattern++;
                 break;
+
             case '.':
                 t.type = T_META_CH;
                 t.ch = *pattern++;
@@ -220,6 +237,30 @@ State *parse_tokens(Token *tokens) {
 
     while (tokens->type != T_FINAL) {
         switch (tokens->type) { 
+            case T_GREEDY_STAR:
+                a = *--fp;
+                data.ch = '\0';
+
+                s = create_state(S_NODE, data, a.start, NULL);
+                point_state_list(a.list, s);
+                *fp++ = create_fragment(s, create_state_list(&s->next2));
+                fp = link_fragments(fp, tokens);
+                tokens++;
+                printf("State %p, Node State\n", (void *) s);
+                break;
+
+            case T_LAZY_STAR:
+                a = *--fp;
+                data.ch = '\0';
+
+                s = create_state(S_NODE, data, NULL, a.start);
+                point_state_list(a.list, s);
+                *fp++ = create_fragment(s, create_state_list(&s->next1));
+                fp = link_fragments(fp, tokens);
+                tokens++;
+                printf("State %p, Node State\n", (void *) s);
+                break;
+
             case T_GREEDY_PLUS:
                 a = *--fp;
                 data.ch = '\0';
@@ -478,6 +519,8 @@ char *token_type_to_string(TokenType type) {
         case T_FINAL: return "T_FINAL";
         case T_GREEDY_PLUS: return "T_GREEDY_PLUS";
         case T_LAZY_PLUS: return "T_LAZY_PLUS";
+        case T_GREEDY_STAR: return "T_GREEDY_STAR";
+        case T_LAZY_STAR: return "T_LAZY_STAR";
         default: return "Unhandled case in token_type_to_string";
     }
 }
