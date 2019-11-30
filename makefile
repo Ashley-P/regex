@@ -24,9 +24,9 @@ test:
 	@$(MAKE) -C tests 
 
 clean:
-	del .\src\obj\*.o
+	del ./src/obj/*.o
 	del libregex.a
-	del bin\test.exe
+	del bin/test.exe
 
 
 $(OBJECTS_DIR)/%.o : src/%.c $(DEPS)
