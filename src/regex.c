@@ -229,7 +229,7 @@ State *parse_tokens(Token *tokens) {
                 *fp++ = create_fragment(a.start, create_state_list(&s->next2));
                 fp = link_fragments(fp, tokens);
                 tokens++;
-                printf("FSM flow altered, new node state %p created\n", (void *) s);
+                printf("State %p, Node State\n", (void *) s);
                 break;
 
             case T_LAZY_PLUS:
@@ -241,7 +241,7 @@ State *parse_tokens(Token *tokens) {
                 *fp++ = create_fragment(a.start, create_state_list(&s->next1));
                 fp = link_fragments(fp, tokens);
                 tokens++;
-                printf("FSM flow altered, new node state %p created\n", (void *) s);
+                printf("State %p, Node State\n", (void *) s);
                 break;
 
             case T_META_CH:
