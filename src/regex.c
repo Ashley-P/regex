@@ -69,17 +69,22 @@ typedef struct Fragment_ {
 
 
 typedef enum {
-    T_LITERAL_CH  = 0x1,
-    T_META_CH     = 0x10, // For non state altering meta characters e.g '.'
-    T_FINAL       = 0x100,
+    T_LITERAL_CH   = 1 << 0,
+    T_META_CH      = 1 << 1,  // For non state altering meta characters e.g '.'
+    T_FINAL        = 1 << 2,
+    
+    T_GREEDY_PLUS  = 1 << 3, // '+'
+    T_LAZY_PLUS    = 1 << 4, // '+?'
 
-    T_GREEDY_PLUS = 0x1000, // '+'
-    T_LAZY_PLUS   = 0x10000,   // '+?'
+    T_GREEDY_STAR  = 1 << 5, // '*'
+    T_LAZY_STAR    = 1 << 6, // '*?'
 
-    T_GREEDY_STAR = 0x100000,
-    T_LAZY_STAR   = 0x1000000,
+    T_GREEDY_QMARK = 1 << 7, // '?'
+    T_LAZY_QMARK   = 1 << 8, // '??'
 
-    T_STATE_ALTERING = T_GREEDY_PLUS | T_LAZY_PLUS | T_GREEDY_STAR | T_LAZY_STAR,
+    T_STATE_ALTERING = T_GREEDY_PLUS | T_LAZY_PLUS |
+                       T_GREEDY_STAR | T_LAZY_STAR |
+                       T_GREEDY_QMARK | T_LAZY_QMARK,
 #if 0
     // Parentheses
     T_OPEN_P,
@@ -166,6 +171,19 @@ Token *tokenize_pattern(char *pattern) {
 
     while (*pattern != '\0') {
         switch (*pattern) {
+            case '?':
+                // Peek the next character to determine whether it's lazy or greedy
+                if (*(pattern + 1) == '?') {
+                    t.type = T_LAZY_QMARK;
+                    pattern++;
+                } else
+                    t.type = T_GREEDY_QMARK;
+
+                t.ch = '?';
+                *tp++ = t;
+                pattern++;
+                break;
+
             case '*':
                 // Peek the next character to determine whether it's lazy or greedy
                 if (*(pattern + 1) == '?') {
@@ -237,6 +255,24 @@ State *parse_tokens(Token *tokens) {
 
     while (tokens->type != T_FINAL) {
         switch (tokens->type) { 
+            case T_GREEDY_QMARK: case T_LAZY_QMARK:
+                a = *--fp;
+                data.ch = '\0';
+
+                s = (tokens->type == T_LAZY_QMARK) ? create_state(S_NODE, data, NULL, a.start)
+                                                   : create_state(S_NODE, data, a.start, NULL);
+
+                //point_state_list(a.list, s);
+
+                *fp++ = (tokens->type == T_LAZY_QMARK)
+                          ? create_fragment(s, append_lists(a.list, create_state_list(&s->next1)))
+                          : create_fragment(s, append_lists(a.list, create_state_list(&s->next2)));
+
+                fp = link_fragments(fp, tokens);
+                tokens++;
+                printf("State %p, Node State\n", (void *) s);
+                break;
+
             case T_GREEDY_STAR: case T_LAZY_STAR:
                 a = *--fp;
                 data.ch = '\0';
@@ -305,10 +341,13 @@ State *parse_tokens(Token *tokens) {
     }
 
     // If we aren't left with one fragment at this point something has gone wrong
+#if 0
     if (fragments != fp-1) {
         printf("Uh oh\n");
         exit(0);
     }
+#endif
+    //fp = link_fragments(fp, tokens);
 
     // Adding the final state
     data.ch = '\0';
@@ -466,12 +505,15 @@ StateList *create_state_list(State **first) {
 
 StateList *append_lists(StateList *a, StateList *b) {
     StateList *rtn = malloc(sizeof(StateList));
+    rtn->n = 0;
 
     for (int i = 0; i < a->n; i++)
         rtn->l[i] = a->l[i];
 
     for (int i = 0; i < b->n; i++)
-        rtn->l[i + rtn->n] = a->l[i];
+        rtn->l[i + a->n] = b->l[i];
+
+    rtn->n = a->n + b->n;
 
     free(a);
     free(b);
@@ -508,6 +550,8 @@ char *token_type_to_string(TokenType type) {
         case T_LAZY_PLUS: return "T_LAZY_PLUS";
         case T_GREEDY_STAR: return "T_GREEDY_STAR";
         case T_LAZY_STAR: return "T_LAZY_STAR";
+        case T_GREEDY_QMARK: return "T_GREEDY_QMARK";
+        case T_LAZY_QMARK: return "T_LAZY_QMARK";
         default: return "Unhandled case in token_type_to_string";
     }
 }
