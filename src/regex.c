@@ -114,11 +114,11 @@ typedef struct BacktrackData_ {
 /***** Function Prototypes *****/
 Token *tokenize_pattern(char *pattern);
 State *parse_tokens(Token *tokens);
-Fragment *link_fragments(Fragment *fp, Token *tokens);
 
 char *perform_regex(State *start, char *string);
 
 /***** Utility functions *****/
+Fragment *link_fragments(Fragment *fp, Token *tokens);
 State *create_state(StateType type, StateData data, State * const next1, State * const next2);
 Fragment create_fragment(State *s, StateList *l);
 void point_state_list(StateList *l, State *a);
@@ -359,18 +359,6 @@ State *parse_tokens(Token *tokens) {
     return start;
 }
 
-Fragment *link_fragments(Fragment *fp, Token *tokens) {
-    // Peeking the next token
-    if (!((tokens + 1)->type & T_STATE_ALTERING)) {
-        Fragment b = *--fp;
-        Fragment a = *--fp;
-        point_state_list(a.list, b.start);
-        *fp++ = create_fragment(a.start, b.list);
-    }
-
-    return fp;
-}
-
 // Naviagtes the FSM and (should) returns the matched sub-string
 char *perform_regex(State *start, char *string) {
     printf("\n----- Navigating Finite State Machine -----\n");
@@ -471,6 +459,18 @@ char *perform_regex(State *start, char *string) {
 
 
 /***** Utility functions *****/
+Fragment *link_fragments(Fragment *fp, Token *tokens) {
+    // Peeking the next token
+    if (!((tokens + 1)->type & T_STATE_ALTERING)) {
+        Fragment b = *--fp;
+        Fragment a = *--fp;
+        point_state_list(a.list, b.start);
+        *fp++ = create_fragment(a.start, b.list);
+    }
+
+    return fp;
+}
+
 State *create_state(StateType type, StateData data, State * const next1, State * const next2) {
     State *a = malloc(sizeof(State));
     a->type  = type;
