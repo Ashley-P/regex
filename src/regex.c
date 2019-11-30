@@ -129,7 +129,17 @@ char *regex(char *pattern, char *string) {
     Token *tokens = tokenize_pattern(pattern);
     // We'd do some checking here maybe
     State *start = parse_tokens(tokens);
-    char *return_str = perform_regex(start, string);
+
+    // Do the regex at each point of the string
+    char *return_str = "";
+    for (int i = 0; *(string + i) != '\0'; i++) {
+        printf("\n\nRegex Iteration %d\n", i + 1);
+        return_str = perform_regex(start, string + i);
+        if (*return_str != '\0')
+            break;
+        else
+            printf("\nIteration %d failed\n\n", i + 1);
+    }
 
     if (*return_str == '\0')
         printf("Regex Failed\n");
