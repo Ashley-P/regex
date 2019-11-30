@@ -237,49 +237,36 @@ State *parse_tokens(Token *tokens) {
 
     while (tokens->type != T_FINAL) {
         switch (tokens->type) { 
-            case T_GREEDY_STAR:
+            case T_GREEDY_STAR: case T_LAZY_STAR:
                 a = *--fp;
                 data.ch = '\0';
 
-                s = create_state(S_NODE, data, a.start, NULL);
+                // Since there are minor differences between the lazy and greedy versions
+                // We can just use the ternary operator and save some redundancy
+                // @NOTE : Don't chain ternary operators together
+                s = (tokens->type == T_LAZY_STAR) ? create_state(S_NODE, data, NULL, a.start)
+                                                  : create_state(S_NODE, data, a.start, NULL);
+
                 point_state_list(a.list, s);
-                *fp++ = create_fragment(s, create_state_list(&s->next2));
+
+                *fp++ = (tokens->type == T_LAZY_STAR) ? create_fragment(s, create_state_list(&s->next1))
+                                                      : create_fragment(s, create_state_list(&s->next2));
                 fp = link_fragments(fp, tokens);
                 tokens++;
                 printf("State %p, Node State\n", (void *) s);
                 break;
 
-            case T_LAZY_STAR:
+            case T_GREEDY_PLUS: case T_LAZY_PLUS:
                 a = *--fp;
                 data.ch = '\0';
 
-                s = create_state(S_NODE, data, NULL, a.start);
+                s = (tokens->type == T_LAZY_PLUS) ? create_state(S_NODE, data, NULL, a.start)
+                                                  : create_state(S_NODE, data, a.start, NULL);
+
                 point_state_list(a.list, s);
-                *fp++ = create_fragment(s, create_state_list(&s->next1));
-                fp = link_fragments(fp, tokens);
-                tokens++;
-                printf("State %p, Node State\n", (void *) s);
-                break;
 
-            case T_GREEDY_PLUS:
-                a = *--fp;
-                data.ch = '\0';
-
-                s = create_state(S_NODE, data, a.start, NULL);
-                point_state_list(a.list, s);
-                *fp++ = create_fragment(a.start, create_state_list(&s->next2));
-                fp = link_fragments(fp, tokens);
-                tokens++;
-                printf("State %p, Node State\n", (void *) s);
-                break;
-
-            case T_LAZY_PLUS:
-                a = *--fp;
-                data.ch = '\0';
-
-                s = create_state(S_NODE, data, NULL, a.start);
-                point_state_list(a.list, s);
-                *fp++ = create_fragment(a.start, create_state_list(&s->next1));
+                *fp++ = (tokens->type == T_LAZY_PLUS) ? create_fragment(a.start, create_state_list(&s->next1))
+                                                      : create_fragment(a.start, create_state_list(&s->next2));
                 fp = link_fragments(fp, tokens);
                 tokens++;
                 printf("State %p, Node State\n", (void *) s);
