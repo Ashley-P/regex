@@ -4,27 +4,18 @@
 #include <string.h>
 #include "regex.h"
 
-#define TEST_MAX_STRING_SIZE 64
+#define TEST_MAX_STRING_SIZE 1000
 
 // This file incldues some automated tests
-static int test_num = 1;
+static int test_num = 0;
 static char default_fp[] = "./bin/resources/automated.txt";
 
-// returns 1 if the value is what it should be
-int run_test(char *pattern, char *string, char *match) {
-    printf("----- Test %d -----\n", test_num);
-    printf("Pattern %s : String %s : Match %s\n", pattern, string, match);
-    char *str;
-    str = regex(pattern, string, REGEX_SURPRESS_LOGGING);
-    printf("%s -> %s\n\n", str, match);
-    test_num++;
-    if (!strcmp(str, match)) {
-        return 1;
-    } else {
-        return 0;
-    }
 
-}
+/***** Function Prototypes *****/
+int run_test(char *pattern, char *string, char *match);
+int parse_line(FILE *f, char *p, char *s, char *m);
+char *collect_string_in_quotes(char *c, char *strp);
+
 
 
 int main(int argc, char *argv[]) {
@@ -54,13 +45,77 @@ int main(int argc, char *argv[]) {
     char pattern[TEST_MAX_STRING_SIZE];
     char string[TEST_MAX_STRING_SIZE];
     char match[TEST_MAX_STRING_SIZE];
+    //char line[TEST_MAX_STRING_SIZE];
 
+    while (parse_line(f, pattern, string, match) != 0) {
+        //printf("Pattern -> \"%s\" : String -> \"%s\" : Match -> \"%s\"\n", pattern, string, match);
+        assert(run_test(pattern, string, match));
+        test_num++;
+    }
     // We don't check whether the test files are correct so don't be wrong
+#if 0
     int test_num = 0;
     while (fscanf(f, "%s%s%s", pattern, string, match) != EOF) {
         assert(run_test(pattern, string, match));
         test_num++;
     }
+#endif
     // If we get here then everything is complete
     printf("\n%d tests completed successfully!\n", test_num);
 }
+
+// returns 1 if the value is what it should be
+int run_test(char *pattern, char *string, char *match) {
+    printf("----- Test %d -----\n", test_num);
+    printf("Pattern -> \"%s\" : String -> \"%s\" : Match -> \"%s\"\n", pattern, string, match);
+    char *str;
+    str = regex(pattern, string, REGEX_SURPRESS_LOGGING);
+    printf("%s -> %s\n\n", str, match);
+    if (!strcmp(str, match)) {
+        return 1;
+    } else {
+        return 0;
+    }
+
+}
+
+// parses a line from the file and splits them into the three provided buffers
+// We expect each string to the inside quotes or else everything breaks
+int parse_line(FILE *f, char *p, char *s, char *m) {
+    char str[TEST_MAX_STRING_SIZE];
+    char *c = str;
+
+    // Copying the line into the string
+    while ((*c = fgetc(f)) != EOF) {
+        if (*c == '\n') break;
+        c++;
+    }
+    if (*c == EOF) return 0;
+
+    c = str;
+    c = collect_string_in_quotes(c, p);
+    c = collect_string_in_quotes(c, s);
+    c = collect_string_in_quotes(c, m);
+
+    return 1;
+}
+
+// Collects a string inside double quotations non-inclusively
+// returns a pointer at the end of the quote
+char *collect_string_in_quotes(char *c, char *strp) {
+    // Chomping whitespace
+    while (*c != '"') c++;
+
+    // Moving into the string we want to collect
+    c++;
+
+    // Collecting the string
+    while (*c != '"') *strp++ = *c++;
+
+    // Null terminating the string
+    *strp = '\0';
+
+    // Moving past the quotation mark we stopped on so we can call this again
+    return ++c;
+}
+
