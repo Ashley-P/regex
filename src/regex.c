@@ -112,10 +112,13 @@ typedef struct BacktrackData_ {
 
 
 /***** Function Prototypes *****/
+char *regex(char *pattern, char *string);
 Token *tokenize_pattern(char *pattern);
 State *parse_tokens(Token *tokens);
-
 char *perform_regex(State *start, char *string);
+
+int check_pattern_correctness(char *pattern);
+int check_tokens_correctness(Token *tokens);
 
 /***** Utility functions *****/
 Fragment *link_fragments(Fragment *fp, Token *tokens);
@@ -140,7 +143,14 @@ char *regex(char *pattern, char *string) {
     printf("String  : \"%s\"\n", string);
 
     // We'd do some checking here maybe
+    if (!check_pattern_correctness(pattern))
+        return "";
+
     Token *tokens = tokenize_pattern(pattern);
+
+    if (!check_tokens_correctness(tokens))
+        return "";
+
     // We'd do some checking here maybe
     State *start = parse_tokens(tokens);
 
@@ -457,6 +467,15 @@ char *perform_regex(State *start, char *string) {
     } // While
 }
 
+
+// Some error handling stuff
+int check_pattern_correctness(char *pattern) {
+    return 1;
+}
+
+int check_tokens_correctness(Token *tokens) {
+    return 1;
+}
 
 /***** Utility functions *****/
 Fragment *link_fragments(Fragment *fp, Token *tokens) {
