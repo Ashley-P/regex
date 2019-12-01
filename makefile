@@ -27,6 +27,7 @@ clean:
 	del ".\src\obj\*.o"
 	del "libregex.a"
 	del "bin\test.exe"
+	del "bin\automated_test.exe"
 
 
 $(OBJECTS_DIR)/%.o : src/%.c $(DEPS)
