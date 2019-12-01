@@ -1,3 +1,41 @@
+    Basic Matching
 "abc" "abc" "abc"
 "abc" "aaaaabc" "abc"
 "abc" "def" ""
+"abc" "abcccc" "abc"
+"abc" "def" ""
+
+    Matching . character
+"p.t" "pat" "pat"
+"p.t" "pet" "pet"
+"p.t" "pit" "pit"
+"p.t" "pot" "pot"
+"p.t" "put" "put"
+"..." "abc" "abc"
+
+    + quantifier (1 or more)
+"ab+" "abbbbb" "abbbbb"
+"a+b" "aaaaab" "aaaaab"
+"a+b+" "aabb" "aabb"
+"ab+?" "abbbbb" "ab"
+"a+?b" "aaaaab" "aaaaab"
+"a+?b+?" "aabb" "aab"
+
+    * quantifier (0 or more)
+"ab*" "abbbbb" "abbbbb"
+"ab*" "a" "a"
+"b*a*b*" "aabb" "aabb"
+"b*a*b*" "bbbb" "bbbb"
+"ab*?" "abbbbb" "a"
+"ba*?b*?" "aabb" "b"
+"ba*?b*?" "bbbb" "b"
+
+    ? quantifier (0 or 1)
+"ab?" "ab" "ab"
+"ab?" "a" "a"
+"ab?c" "abc" "abc"
+"ab?c" "ac" "ac"
+"ab??" "ab" "a"
+"ab??" "a" "a"
+"ab??c" "ac" "ac"
+"ab??c" "ac" "ac"

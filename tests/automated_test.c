@@ -7,7 +7,7 @@
 #define TEST_MAX_STRING_SIZE 1000
 
 // This file incldues some automated tests
-static int test_num = 0;
+static int test_num = 1;
 static char default_fp[] = "./bin/resources/automated.txt";
 
 
@@ -15,6 +15,7 @@ static char default_fp[] = "./bin/resources/automated.txt";
 int run_test(char *pattern, char *string, char *match);
 int parse_line(FILE *f, char *p, char *s, char *m);
 char *collect_string_in_quotes(char *c, char *strp);
+int count_quotations(char *s);
 
 
 
@@ -46,12 +47,18 @@ int main(int argc, char *argv[]) {
     char string[TEST_MAX_STRING_SIZE];
     char match[TEST_MAX_STRING_SIZE];
     //char line[TEST_MAX_STRING_SIZE];
-
-    while (parse_line(f, pattern, string, match) != 0) {
+    int i;
+    do {
+        i = parse_line(f, pattern, string, match);
         //printf("Pattern -> \"%s\" : String -> \"%s\" : Match -> \"%s\"\n", pattern, string, match);
-        assert(run_test(pattern, string, match));
-        test_num++;
-    }
+        if (i == 0)
+            break;
+        else if (i == 1) {
+            assert(run_test(pattern, string, match));
+            test_num++;
+        } else if (i == 2)
+            continue;
+    } while (i != 0);
     // We don't check whether the test files are correct so don't be wrong
 #if 0
     int test_num = 0;
@@ -61,7 +68,7 @@ int main(int argc, char *argv[]) {
     }
 #endif
     // If we get here then everything is complete
-    printf("\n%d tests completed successfully!\n", test_num);
+    printf("\n%d tests completed successfully!\n", test_num - 1);
 }
 
 // returns 1 if the value is what it should be
@@ -70,7 +77,7 @@ int run_test(char *pattern, char *string, char *match) {
     printf("Pattern -> \"%s\" : String -> \"%s\" : Match -> \"%s\"\n", pattern, string, match);
     char *str;
     str = regex(pattern, string, REGEX_SURPRESS_LOGGING);
-    printf("%s -> %s\n\n", str, match);
+    printf("%s -> %s\n\n", pattern, match);
     if (!strcmp(str, match)) {
         return 1;
     } else {
@@ -79,8 +86,14 @@ int run_test(char *pattern, char *string, char *match) {
 
 }
 
-// parses a line from the file and splits them into the three provided buffers
-// We expect each string to the inside quotes or else everything breaks
+/**
+ * parses a line from the file and splits them into the three provided buffers
+ * We expect each string to the inside quotes or else everything breaks
+ * return values:
+ * 0 : End of file
+ * 1 : Successfully parsed the test
+ * 2 : Unsuccessfully parsed the test
+ */
 int parse_line(FILE *f, char *p, char *s, char *m) {
     char str[TEST_MAX_STRING_SIZE];
     char *c = str;
@@ -93,6 +106,16 @@ int parse_line(FILE *f, char *p, char *s, char *m) {
     if (*c == EOF) return 0;
 
     c = str;
+
+    if (*c != '"') { 
+        if (*c != '\n')
+            printf("\n%s\n", str);
+        return 2;
+    } else if (count_quotations(str) != 6) {
+        printf("\nSkipping badly formatted test - > %s", str);
+        return 2;
+    }
+
     c = collect_string_in_quotes(c, p);
     c = collect_string_in_quotes(c, s);
     c = collect_string_in_quotes(c, m);
@@ -119,3 +142,11 @@ char *collect_string_in_quotes(char *c, char *strp) {
     return ++c;
 }
 
+// Counts the number of quotes in a string
+int count_quotations(char *s) {
+    int i = 0;
+    while (*s != '\0')
+        if (*s++ == '"') i++;
+
+    return i;
+}
