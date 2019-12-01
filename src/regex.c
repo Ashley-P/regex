@@ -8,6 +8,7 @@
 
 
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h> // For strlen
@@ -118,6 +119,8 @@ State *parse_tokens(Token *tokens);
 char *perform_regex(State *start, char *string);
 
 int check_pattern_correctness(char *pattern);
+int state_altering_check(char *p);
+
 int check_tokens_correctness(Token *tokens);
 
 /***** Utility functions *****/
@@ -134,6 +137,7 @@ char *state_type_to_string(StateType type);
 char *token_type_to_string(TokenType type);
 char *meta_ch_type_to_string(MetaChType type);
 
+void pattern_error(char *p, unsigned int pos, char *msg, ...);
 
 
 
@@ -468,14 +472,60 @@ char *perform_regex(State *start, char *string) {
 }
 
 
-// Some error handling stuff
+// Returns 1 if the pattern is correct
 int check_pattern_correctness(char *pattern) {
+    int a = 1;
+    a = state_altering_check(pattern);
+    return a;
+}
+
+/**
+ * State altering tokens can't be next to each other or at the start of the pattern
+ * e.g "ab?+" "+ab"
+ */
+int state_altering_check(char *p) {
+    // Checking the beginning of the token stream
+    int pp = 0; // Pattern pointer
+
+    switch (*p) {
+        case '*': case '+': case '?':
+            pattern_error(p, 0, "Meta character \"%c\" is not allowed at the start of the pattern\n", *p);
+            return 0;
+        default:
+            break;
+    }
+
+    while (*(p + pp) != '\0') {
+        // Checking if tokens are next to each other
+        switch (*(p + pp)) {
+            case '*': case '+': case '?':
+                // Chceking next character
+                switch (*(p + pp + 1)) {
+                    case '*': case '+':
+                        pattern_error(p, pp + 1,
+                                "Meta character \"%c\" is not allowed after meta character \"%c\"\n",
+                                *(p + pp + 1), *(p + pp));
+                        return 0;
+                    default:
+                        break;
+                }
+                break;
+            default:
+                break;
+        }
+        pp++;
+    }
+
     return 1;
 }
 
+
+// Returns 1 if the token stream is correct
 int check_tokens_correctness(Token *tokens) {
-    return 1;
+    int a = 1;
+    return a;
 }
+
 
 /***** Utility functions *****/
 Fragment *link_fragments(Fragment *fp, Token *tokens) {
@@ -580,4 +630,26 @@ char *meta_ch_type_to_string(MetaChType type) {
         case M_ANY_CH: return "M_ANY_CH";
         default: return "Unhandled case in meta_ch_type_to_string";
     }
+}
+
+// Allows nice printing showing where the error is in the pattern
+void pattern_error(char *p, unsigned int pos, char *msg, ...) {
+    printf("Error in pattern -> %s\n", p);
+
+    // Constructing the string that points to the error in the pattern
+    char str[MAX_BUFFER_SIZE];
+    char *sp = str;
+    for (unsigned int i = 0; i < 20 + pos; i++) {
+        *sp++ = ' ';
+    }
+    *sp++ = '^';
+    *sp++ = '\n';
+    *sp++ = '\0';
+    printf(str);
+
+    // Printing the message
+    va_list args;
+    va_start(args, msg);
+    vprintf(msg, args);
+    va_end(args);
 }
