@@ -13,12 +13,13 @@
 #include <stdlib.h>
 #include <string.h> // For strlen
 
+#include "regex.h"
 #include "regex_utils.h"
 
 
-#define MAX_BUFFER_SIZE 64
 
-//static char *meta_characters = "[\\^$.|?*+()";
+/***** Defines *****/
+#define MAX_BUFFER_SIZE 64
 
 
 /***** Datatypes *****/
@@ -109,11 +110,15 @@ typedef struct BacktrackData_ {
 } BacktrackData;
 
 
+/***** Constants *****/
+static int surpress_logging = 0;
+
+
 
 
 
 /***** Function Prototypes *****/
-char *regex(char *pattern, char *string);
+char *regex(char *pattern, char *string, unsigned int options);
 Token *tokenize_pattern(char *pattern);
 State *parse_tokens(Token *tokens);
 char *perform_regex(State *start, char *string);
@@ -122,6 +127,7 @@ int check_pattern_correctness(char *pattern);
 int state_altering_check(char *p);
 
 int check_tokens_correctness(Token *tokens);
+
 
 /***** Utility functions *****/
 Fragment *link_fragments(Fragment *fp, Token *tokens);
@@ -138,13 +144,17 @@ char *token_type_to_string(TokenType type);
 char *meta_ch_type_to_string(MetaChType type);
 
 void pattern_error(char *p, unsigned int pos, char *msg, ...);
+void regex_log(char *msg, ...);
 
 
 
-char *regex(char *pattern, char *string) {
+char *regex(char *pattern, char *string, unsigned int options) {
+    // Handle options - should be moved to it's own function
+    if (options & REGEX_SURPRESS_LOGGING) surpress_logging = 1;
+
     // Echoing back for no real reason
-    printf("Pattern : \"%s\"\n", pattern);
-    printf("String  : \"%s\"\n", string);
+    regex_log("Pattern : \"%s\"\n", pattern);
+    regex_log("String  : \"%s\"\n", string);
 
     // We'd do some checking here maybe
     if (!check_pattern_correctness(pattern))
@@ -161,24 +171,24 @@ char *regex(char *pattern, char *string) {
     // Do the regex at each point of the string
     char *return_str = "";
     for (int i = 0; *(string + i) != '\0'; i++) {
-        printf("\n\nRegex Iteration %d\n", i + 1);
+        regex_log("\n\nRegex Iteration %d\n", i + 1);
         return_str = perform_regex(start, string + i);
         if (*return_str != '\0')
             break;
         else
-            printf("\nIteration %d failed\n\n", i + 1);
+            regex_log("\nIteration %d failed\n\n", i + 1);
     }
 
     if (*return_str == '\0')
-        printf("Regex Failed\n");
+        regex_log("Regex Failed\n");
     else
-        printf("Returned string : %s\n\n", return_str);
+        regex_log("Returned string : %s\n\n", return_str);
     return return_str;
 }
 
 
 Token *tokenize_pattern(char *pattern) {
-    printf("\n----- Tokenizing pattern -----\n");
+    regex_log("\n----- Tokenizing pattern -----\n");
     Token *tokens = malloc(sizeof(Token) * MAX_BUFFER_SIZE);
     Token *tp = tokens;
     Token t;
@@ -237,20 +247,20 @@ Token *tokenize_pattern(char *pattern) {
                 *tp++ = t;
                 break;
         }
-        printf("TokenType = %s, ch = %c\n", token_type_to_string((tp - 1)->type), (tp - 1)->ch);
+        regex_log("TokenType = %s, ch = %c\n", token_type_to_string((tp - 1)->type), (tp - 1)->ch);
     }
 
     t.type = T_FINAL;
     t.ch = '\0';
     *tp++ = t;
 
-    printf("Tokenizing complete\n");
+    regex_log("Tokenizing complete\n");
     return tokens;
 }
 
 
 State *parse_tokens(Token *tokens) {
-    printf("\n----- Parsing tokens -----\n");
+    regex_log("\n----- Parsing tokens -----\n");
 
     Fragment fragments[MAX_BUFFER_SIZE];
     Fragment *fp = fragments;
@@ -284,7 +294,7 @@ State *parse_tokens(Token *tokens) {
 
                 fp = link_fragments(fp, tokens);
                 tokens++;
-                printf("State %p, Node State\n", (void *) s);
+                regex_log("State %p, Node State\n", (void *) s);
                 break;
 
             case T_GREEDY_STAR: case T_LAZY_STAR:
@@ -303,7 +313,7 @@ State *parse_tokens(Token *tokens) {
                                                       : create_fragment(s, create_state_list(&s->next2));
                 fp = link_fragments(fp, tokens);
                 tokens++;
-                printf("State %p, Node State\n", (void *) s);
+                regex_log("State %p, Node State\n", (void *) s);
                 break;
 
             case T_GREEDY_PLUS: case T_LAZY_PLUS:
@@ -319,7 +329,7 @@ State *parse_tokens(Token *tokens) {
                                                       : create_fragment(a.start, create_state_list(&s->next2));
                 fp = link_fragments(fp, tokens);
                 tokens++;
-                printf("State %p, Node State\n", (void *) s);
+                regex_log("State %p, Node State\n", (void *) s);
                 break;
 
             case T_META_CH:
@@ -327,7 +337,7 @@ State *parse_tokens(Token *tokens) {
                 s = create_state(S_META_CH, data, NULL, NULL);
                 *fp++ = create_fragment(s, create_state_list(&s->next1));
 
-                printf("State %p, Type = %s, ch = %s\n",
+                regex_log("State %p, Type = %s, ch = %s\n",
                         (void *) s, state_type_to_string(s->type), meta_ch_type_to_string(s->data.meta));
 
                 fp = link_fragments(fp, tokens);
@@ -339,7 +349,7 @@ State *parse_tokens(Token *tokens) {
                 s = create_state(S_LITERAL_CH, data, NULL, NULL);
                 *fp++ = create_fragment(s, create_state_list(&s->next1));
 
-                printf("State %p, Type = %s, ch = %c\n",
+                regex_log("State %p, Type = %s, ch = %c\n",
                         (void *) s, state_type_to_string(s->type), s->data.ch);
 
                 // Concatanation of the top 2 fragments on the stack happen if the next token isn't
@@ -348,7 +358,7 @@ State *parse_tokens(Token *tokens) {
                 tokens++;
                 break;
             default:
-                printf("nani\n");
+                regex_log("nani\n");
                 tokens++;
                 break;
         }
@@ -357,7 +367,7 @@ State *parse_tokens(Token *tokens) {
     // If we aren't left with one fragment at this point something has gone wrong
 #if 0
     if (fragments != fp-1) {
-        printf("Uh oh\n");
+        regex_log("Uh oh\n");
         exit(0);
     }
 #endif
@@ -368,14 +378,14 @@ State *parse_tokens(Token *tokens) {
     s = create_state(S_FINAL, data, NULL, NULL);
     point_state_list((*--fp).list, s);
 
-    printf("Parsing complete\n");
+    regex_log("Parsing complete\n");
 
     return start;
 }
 
 // Naviagtes the FSM and (should) returns the matched sub-string
 char *perform_regex(State *start, char *string) {
-    printf("\n----- Navigating Finite State Machine -----\n");
+    regex_log("\n----- Navigating Finite State Machine -----\n");
 
     BacktrackData backtrack_stack[MAX_BUFFER_SIZE];
     BacktrackData *btp = backtrack_stack;
@@ -391,7 +401,7 @@ char *perform_regex(State *start, char *string) {
 
 
     while (1) {
-        printf("State %p, ", (void *) s);
+        regex_log("State %p, ", (void *) s);
 
         switch (s->type) {
             case S_META_CH:
@@ -400,7 +410,7 @@ char *perform_regex(State *start, char *string) {
                     // Matches anything but the null character
                     case M_ANY_CH:
                         if (*string != '\0') {
-                            printf("Meta Character \".\" matched character \"%c\" in string \n", *string);
+                            regex_log("Meta Character \".\" matched character \"%c\" in string \n", *string);
 
                             *sp++ = *string++;
                             if (s->next2)
@@ -408,12 +418,12 @@ char *perform_regex(State *start, char *string) {
 
                             s = s->next1;
                         } else {
-                            printf("Meta Character \".\" did not match character \"%c\" in string \n", *string);
+                            regex_log("Meta Character \".\" did not match character \"%c\" in string \n", *string);
                             do_backtrack = 1;
                         }
                         break;
                     default:
-                        printf("Shouldn't hit this\n");
+                        regex_log("Shouldn't hit this\n");
                         return "";
                 }
 
@@ -421,7 +431,7 @@ char *perform_regex(State *start, char *string) {
 
             case S_LITERAL_CH:
                 if (s->data.ch == *string) {
-                    printf("Literal character \"%c\" matched character \"%c\" in string\n",
+                    regex_log("Literal character \"%c\" matched character \"%c\" in string\n",
                             s->data.ch, *string);
 
                     *sp++ = *string++;
@@ -430,7 +440,7 @@ char *perform_regex(State *start, char *string) {
                     s = s->next1;
                 } else {
                     // Backtracking would happen here
-                    printf("Literal character \"%c\" did not match character \"%c\" in string\n",
+                    regex_log("Literal character \"%c\" did not match character \"%c\" in string\n",
                             s->data.ch, *string);
                     do_backtrack = 1;
                 }
@@ -438,33 +448,33 @@ char *perform_regex(State *start, char *string) {
 
             // Specials
             case S_FINAL:
-                printf("Match completed!\n");
+                regex_log("Match completed!\n");
                 *sp++ = '\0';
                 return rtn_str;
             
             case S_NODE:
-                printf("Node State, next1 = %p, next2 = %p\n", (void *) s->next1, (void *) s->next2);
+                regex_log("Node State, next1 = %p, next2 = %p\n", (void *) s->next1, (void *) s->next2);
                 if (s->next2)
                     *btp++ = create_backtrack_data(string, sp, s->next2);
                 s = s->next1;
                 break;
             default:
-                printf("Shouldn't hit this\n");
+                regex_log("Shouldn't hit this\n");
                 return "";
         } // Switch
 
         if (do_backtrack) {
-            printf("\nAttempting to backtrack\n");
+            regex_log("\nAttempting to backtrack\n");
 
             if (backtrack_stack == btp) {
-                printf("Stack empty, unable to backtrack\n");
+                regex_log("Stack empty, unable to backtrack\n");
                 return "";
             } else {
                 b = *--btp;
                 string = b.string;
                 sp = b.sp;
                 s = b.s;
-                printf("Backtrack complete: Starting at state %p\n\n", (void *) s);
+                regex_log("Backtrack complete: Starting at state %p\n\n", (void *) s);
                 do_backtrack = 0;
             }
         }
@@ -648,6 +658,16 @@ void pattern_error(char *p, unsigned int pos, char *msg, ...) {
     printf(str);
 
     // Printing the message
+    va_list args;
+    va_start(args, msg);
+    vprintf(msg, args);
+    va_end(args);
+}
+
+// Let's us easily surpress printing to the screen probably temporary
+void regex_log(char *msg, ...) {
+    if (surpress_logging) return;
+
     va_list args;
     va_start(args, msg);
     vprintf(msg, args);

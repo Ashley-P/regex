@@ -10,5 +10,5 @@ int main(int argc, char *argv[]) {
         exit(0);
     }
     
-    regex(argv[1], argv[2]);
+    regex(argv[1], argv[2], 0);
 }
