@@ -1,40 +1,29 @@
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 #include "regex.h"
 
-#define TEST_SHOULD_SUCCEED 1
-#define TEST_SHOULD_FAIL    2
 
 // This file incldues some automated tests
+static int test_num = 1;
 
 // returns 1 if the value is what it should be
-int run_test(char *pattern, char *string, int outcome) {
-    printf("Pattern %s : String %s : Pass or fail %s\n", pattern, string,
-            (outcome == 1) ? "TEST_SHOULD_SUCCEED" : "TEST_SHOULD_FAIL");
+int run_test(char *pattern, char *string, char *match) {
+    printf("----- Test %d -----\n", test_num);
+    printf("Pattern %s : String %s : Match %s\n", pattern, string, match);
     char *str;
     str = regex(pattern, string, REGEX_SURPRESS_LOGGING);
-    if (outcome == TEST_SHOULD_SUCCEED) {
-        if (*str != '\0') {
-            printf("Test successful, returned string -> %s", str);
-            return 1;
-        } else {
-            printf("Test failed");
-            return 0;
-        }
-
+    printf("%s -> %s\n\n", str, match);
+    test_num++;
+    if (!strcmp(str, match)) {
+        return 1;
     } else {
-        if (*str == '\0') {
-            printf("Test failed (success)");
-            return 1;
-        } else {
-            printf("Test successful (failed), returned string -> %s", str);
-            return 0;
-        }
+        return 0;
     }
 
 }
 
 
 int main(void) {
-    assert(run_test("re", "re", TEST_SHOULD_SUCCEED));
+    assert(run_test("re", "re", "re"));
 }
