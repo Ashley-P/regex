@@ -5,7 +5,7 @@ PROJECT = libregex.a
 
 #SRC = $(wildcard src/*.c)
 
-_OBJECTS = regex.o regex_utils.o
+_OBJECTS = regex.o
 #OBJECTS = $(patsubst %.c, /obj/%.o, $(src))
 OBJECTS = $(patsubst %, $(OBJECTS_DIR)/%, $(_OBJECTS))
 

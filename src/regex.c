@@ -14,12 +14,12 @@
 #include <string.h> // For strlen
 
 #include "regex.h"
-#include "regex_utils.h"
 
 
 
 /***** Defines *****/
-#define MAX_BUFFER_SIZE 64
+#define MAX_STACK_SIZE 64
+#define MAX_STRING_SIZE 256
 
 
 /***** Datatypes *****/
@@ -40,12 +40,13 @@ typedef enum {
     // Normal States
     S_LITERAL_CH,
     S_META_CH,
-    S_RANGE,
+    S_CCLASS,
 } StateType;
 
 typedef union StateData_ {
     char ch; // for literal characters
     MetaChType meta; // Meta character types
+    char *cclass;
 } StateData;
 
 typedef struct State_ {
@@ -59,7 +60,7 @@ typedef struct State_ {
 
 
 typedef struct StateList_ {
-    struct State_ **l[MAX_BUFFER_SIZE];
+    struct State_ **l[MAX_STACK_SIZE];
     int n;
 } StateList;
 
@@ -73,29 +74,30 @@ typedef struct Fragment_ {
 typedef enum {
     T_LITERAL_CH   = 1 << 0,
     T_META_CH      = 1 << 1,  // For non state altering meta characters e.g '.'
-    T_FINAL        = 1 << 2,
+    T_FINAL        = 1 << 3,
     
-    T_GREEDY_PLUS  = 1 << 3, // '+'
-    T_LAZY_PLUS    = 1 << 4, // '+?'
+    T_GREEDY_PLUS  = 1 << 4, // '+'
+    T_LAZY_PLUS    = 1 << 5, // '+?'
 
-    T_GREEDY_STAR  = 1 << 5, // '*'
-    T_LAZY_STAR    = 1 << 6, // '*?'
+    T_GREEDY_STAR  = 1 << 6, // '*'
+    T_LAZY_STAR    = 1 << 7, // '*?'
 
-    T_GREEDY_QMARK = 1 << 7, // '?'
-    T_LAZY_QMARK   = 1 << 8, // '??'
+    T_GREEDY_QMARK = 1 << 8, // '?'
+    T_LAZY_QMARK   = 1 << 9, // '??'
 
     T_STATE_ALTERING = T_GREEDY_PLUS | T_LAZY_PLUS |
                        T_GREEDY_STAR | T_LAZY_STAR |
                        T_GREEDY_QMARK | T_LAZY_QMARK,
+
+    // Square brackets
+    T_OPEN_SB      = 1 << 10,
+    T_CLOSE_SB     = 1 << 11,
 #if 0
     // Parentheses
     T_OPEN_P,
     T_CLOSE_P,
-
-    // Square brackets
-    T_OPEN_SB,
-    T_CLOSE_SB,
 #endif
+
 } TokenType;
 
 typedef struct Token_ {
@@ -128,6 +130,8 @@ int state_altering_check(char *p);
 
 int check_tokens_correctness(Token *tokens);
 
+char *create_cclass(Token **tokens);
+
 
 /***** Utility functions *****/
 Fragment *link_fragments(Fragment *fp, Token *tokens);
@@ -142,6 +146,8 @@ BacktrackData create_backtrack_data(char *string, char *sp, State *s);
 char *state_type_to_string(StateType type);
 char *token_type_to_string(TokenType type);
 char *meta_ch_type_to_string(MetaChType type);
+
+int match_ch_str(char ch, char *str);
 
 void pattern_error(char *p, unsigned int pos, char *msg, ...);
 void regex_log(char *msg, ...);
@@ -189,12 +195,24 @@ char *regex(char *pattern, char *string, unsigned int options) {
 
 Token *tokenize_pattern(char *pattern) {
     regex_log("\n----- Tokenizing pattern -----\n");
-    Token *tokens = malloc(sizeof(Token) * MAX_BUFFER_SIZE);
+    Token *tokens = malloc(sizeof(Token) * MAX_STACK_SIZE);
     Token *tp = tokens;
     Token t;
 
     while (*pattern != '\0') {
         switch (*pattern) {
+            case '[': 
+                t.type = T_OPEN_SB;
+                t.ch = *pattern++;
+                *tp++ = t;
+                break;
+
+            case ']': 
+                t.type = T_CLOSE_SB;
+                t.ch = *pattern++;
+                *tp++ = t;
+                break;
+
             case '?':
                 // Peek the next character to determine whether it's lazy or greedy
                 if (*(pattern + 1) == '?') {
@@ -262,7 +280,7 @@ Token *tokenize_pattern(char *pattern) {
 State *parse_tokens(Token *tokens) {
     regex_log("\n----- Parsing tokens -----\n");
 
-    Fragment fragments[MAX_BUFFER_SIZE];
+    Fragment fragments[MAX_STACK_SIZE];
     Fragment *fp = fragments;
     Fragment a, b;
 
@@ -271,7 +289,7 @@ State *parse_tokens(Token *tokens) {
     State *start = create_state(S_START, data, NULL, NULL);
     State *s;
 
-    for (int i = 0; i < MAX_BUFFER_SIZE; i++) {
+    for (int i = 0; i < MAX_STACK_SIZE; i++) {
         fragments[i] = create_fragment(NULL, NULL);
     }
 
@@ -279,6 +297,23 @@ State *parse_tokens(Token *tokens) {
 
     while (tokens->type != T_FINAL) {
         switch (tokens->type) { 
+            case T_OPEN_SB: 
+                data.cclass = create_cclass(&tokens);
+                s = create_state(S_CCLASS, data, NULL, NULL);
+                *fp++ = create_fragment(s, create_state_list(&s->next1));
+
+                regex_log("State %p, Type = %s, range = %s\n",
+                        (void *) s, state_type_to_string(s->type), s->data.cclass);
+
+                // Concatanation of the top 2 fragments on the stack happen if the next token isn't
+                // one that alters the flow of the FSM
+                fp = link_fragments(fp, tokens);
+                tokens++;
+                break;
+            case T_CLOSE_SB:
+                tokens++;
+                break;
+
             case T_GREEDY_QMARK: case T_LAZY_QMARK:
                 a = *--fp;
                 data.ch = '\0';
@@ -358,7 +393,9 @@ State *parse_tokens(Token *tokens) {
                 tokens++;
                 break;
             default:
-                regex_log("nani\n");
+                regex_log("Internal Error: Unknown/unhandled token type \"%s\" in function %s\n",
+                        token_type_to_string(tokens->type), __func__);
+                exit(0);
                 tokens++;
                 break;
         }
@@ -387,13 +424,13 @@ State *parse_tokens(Token *tokens) {
 char *perform_regex(State *start, char *string) {
     regex_log("\n----- Navigating Finite State Machine -----\n");
 
-    BacktrackData backtrack_stack[MAX_BUFFER_SIZE];
+    BacktrackData backtrack_stack[MAX_STACK_SIZE];
     BacktrackData *btp = backtrack_stack;
     BacktrackData b;
     int do_backtrack = 0;
 
     State *s = start->next1; // This is the state we are checking
-    char *rtn_str = malloc(sizeof(char) * MAX_BUFFER_SIZE);
+    char *rtn_str = malloc(sizeof(char) * MAX_STRING_SIZE);
     char *sp = rtn_str;
 
     if (start->next2)
@@ -404,6 +441,21 @@ char *perform_regex(State *start, char *string) {
         regex_log("State %p, ", (void *) s);
 
         switch (s->type) {
+            case S_CCLASS:
+                // If we get a match
+                if (match_ch_str(*string, s->data.cclass)) {
+                    regex_log("Character class ... matched with character \"%c\" in string \n", *string);
+
+                    *sp++ = *string++;
+                    if (s->next2)
+                        *btp++ = create_backtrack_data(string, sp, s->next2);
+
+                    s = s->next1;
+                } else {
+                    regex_log("Character class ... did not match with character \"%c\" in string \n", *string);
+                    do_backtrack = 1;
+                }
+                break;
             case S_META_CH:
 
                 switch (s->data.meta) {
@@ -494,8 +546,7 @@ int check_pattern_correctness(char *pattern) {
  * e.g "ab?+" "+ab"
  */
 int state_altering_check(char *p) {
-    // Checking the beginning of the token stream
-    int pp = 0; // Pattern pointer
+    // Checking the beginning of the pattern
 
     switch (*p) {
         case '*': case '+': case '?':
@@ -505,16 +556,38 @@ int state_altering_check(char *p) {
             break;
     }
 
-    while (*(p + pp) != '\0') {
+    // Used to prevent erroneous errors about incorrect character usage inside character classes
+    int inside_cclass = 0;
+    char *c = p - 1;
+
+    while (*++c != '\0') {
+        if (*c == '[')
+            inside_cclass = 1;
+        else if (*c == '[')
+            inside_cclass = 0;
+
+        // Invalid setup e.g "?+"
+        if ((*c == '*' || *c == '+' || *c == '?') && (*(c + 1) == '*' || *(c + 1) == '+')) {
+
+            // Ignore if the previous character is esacped or we are in a character class 
+                if (*(c - 1) != '\\' && inside_cclass != 1) {
+                        pattern_error(p, (int) ((c + 1) - p),
+                                "Meta character \"%c\" is not allowed after meta character \"%c\"\n",
+                                *(c + 1), *c);
+                        return 0;
+
+                }
+        }
         // Checking if tokens are next to each other
-        switch (*(p + pp)) {
+#if 0
+        switch (*c) {
             case '*': case '+': case '?':
                 // Chceking next character
                 switch (*(p + pp + 1)) {
                     case '*': case '+':
                         pattern_error(p, pp + 1,
                                 "Meta character \"%c\" is not allowed after meta character \"%c\"\n",
-                                *(p + pp + 1), *(p + pp));
+                                *(p + pp + 1), c);
                         return 0;
                     default:
                         break;
@@ -523,7 +596,7 @@ int state_altering_check(char *p) {
             default:
                 break;
         }
-        pp++;
+#endif
     }
 
     return 1;
@@ -536,6 +609,31 @@ int check_tokens_correctness(Token *tokens) {
     return a;
 }
 
+
+char *create_cclass(Token **tokens) {
+    char *cclass = malloc(sizeof(char) * MAX_STRING_SIZE);
+    char *sp = cclass;
+
+    while ((*tokens)->type != T_CLOSE_SB) {
+        switch ((*tokens)->type) {
+
+            case T_LAZY_PLUS: case T_LAZY_STAR: case T_LAZY_QMARK:
+                // It's unlikely we hit this but we should collect both parts
+                *sp++ = '?';
+
+            case T_LITERAL_CH: case T_GREEDY_QMARK: case T_GREEDY_STAR: case T_GREEDY_PLUS: case T_META_CH:
+                // @NOTE : We don't check for collecting multiples of the same thing
+                *sp++ = (*tokens)->ch;
+                break;
+
+            case T_FINAL: default:
+                break;
+        }
+        (*tokens)++;
+    }
+    *sp++ = '\0';
+    return cclass;
+}
 
 /***** Utility functions *****/
 Fragment *link_fragments(Fragment *fp, Token *tokens) {
@@ -615,7 +713,7 @@ char *state_type_to_string(StateType type) {
         case S_NODE: return "S_NODE";
         case S_LITERAL_CH: return "S_LITERAL_CH";
         case S_META_CH: return "S_META_CH";
-        case S_RANGE: return "S_RANGE";
+        case S_CCLASS: return "S_CCLASS";
         default: return "Unhandled case in state_type_to_string";
     }
 }
@@ -631,6 +729,8 @@ char *token_type_to_string(TokenType type) {
         case T_LAZY_STAR: return "T_LAZY_STAR";
         case T_GREEDY_QMARK: return "T_GREEDY_QMARK";
         case T_LAZY_QMARK: return "T_LAZY_QMARK";
+        case T_OPEN_SB: return "T_OPEN_SB";
+        case T_CLOSE_SB: return "T_CLOSE_SB";
         default: return "Unhandled case in token_type_to_string";
     }
 }
@@ -642,12 +742,24 @@ char *meta_ch_type_to_string(MetaChType type) {
     }
 }
 
+// returns 1 in the character is in the string
+int match_ch_str(char ch, char *str) {
+    int str_len = strlen(str);
+
+    for (int i = 0; i < str_len; i++) {
+        if (ch == *(str + i))
+            return 1;
+    }
+    return 0;
+}
+
+
 // Allows nice printing showing where the error is in the pattern
 void pattern_error(char *p, unsigned int pos, char *msg, ...) {
     printf("Error in pattern -> %s\n", p);
 
     // Constructing the string that points to the error in the pattern
-    char str[MAX_BUFFER_SIZE];
+    char str[MAX_STRING_SIZE];
     char *sp = str;
     for (unsigned int i = 0; i < 20 + pos; i++) {
         *sp++ = ' ';
