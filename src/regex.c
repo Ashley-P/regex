@@ -113,7 +113,7 @@ typedef struct BacktrackData_ {
 
 
 /***** Constants *****/
-static int surpress_logging = 0;
+static int suppress_logging = 0;
 
 
 
@@ -127,6 +127,7 @@ char *perform_regex(State *start, char *string);
 
 int check_pattern_correctness(char *pattern);
 int state_altering_check(char *p);
+int character_class_check(char *p);
 
 int check_tokens_correctness(Token *tokens);
 
@@ -149,29 +150,29 @@ char *meta_ch_type_to_string(MetaChType type);
 
 int match_ch_str(char ch, char *str);
 
-void pattern_error(char *p, unsigned int pos, char *msg, ...);
+void pattern_error(char *p, unsigned int pos, unsigned int range, char *msg, ...);
 void regex_log(char *msg, ...);
 
 
 
 char *regex(char *pattern, char *string, unsigned int options) {
     // Handle options - should be moved to it's own function
-    if (options & REGEX_SURPRESS_LOGGING) surpress_logging = 1;
+    if (options & REGEX_SUPPRESS_LOGGING) suppress_logging = 1;
 
     // Echoing back for no real reason
     regex_log("Pattern : \"%s\"\n", pattern);
     regex_log("String  : \"%s\"\n", string);
 
     // We'd do some checking here maybe
-    if (!check_pattern_correctness(pattern))
+    if (check_pattern_correctness(pattern))
         return "";
 
     Token *tokens = tokenize_pattern(pattern);
 
-    if (!check_tokens_correctness(tokens))
+    // We'd do some checking here maybe
+    if (check_tokens_correctness(tokens))
         return "";
 
-    // We'd do some checking here maybe
     State *start = parse_tokens(tokens);
 
     // Do the regex at each point of the string
@@ -198,6 +199,7 @@ Token *tokenize_pattern(char *pattern) {
     Token *tokens = malloc(sizeof(Token) * MAX_STACK_SIZE);
     Token *tp = tokens;
     Token t;
+    int inside_cclass = 0;
 
     while (*pattern != '\0') {
         switch (*pattern) {
@@ -205,17 +207,21 @@ Token *tokenize_pattern(char *pattern) {
                 t.type = T_OPEN_SB;
                 t.ch = *pattern++;
                 *tp++ = t;
+                inside_cclass = 1;
                 break;
 
             case ']': 
                 t.type = T_CLOSE_SB;
                 t.ch = *pattern++;
                 *tp++ = t;
+                inside_cclass = 0;
                 break;
 
             case '?':
                 // Peek the next character to determine whether it's lazy or greedy
-                if (*(pattern + 1) == '?') {
+                if (inside_cclass == 1) {
+                    t.type = T_LITERAL_CH;
+                } else if (*(pattern + 1) == '?') {
                     t.type = T_LAZY_QMARK;
                     pattern++;
                 } else
@@ -228,7 +234,9 @@ Token *tokenize_pattern(char *pattern) {
 
             case '*':
                 // Peek the next character to determine whether it's lazy or greedy
-                if (*(pattern + 1) == '?') {
+                if (inside_cclass == 1) {
+                    t.type = T_LITERAL_CH;
+                } else if (*(pattern + 1) == '?') {
                     t.type = T_LAZY_STAR;
                     pattern++;
                 } else
@@ -241,7 +249,9 @@ Token *tokenize_pattern(char *pattern) {
 
             case '+':
                 // Peek the next character to determine whether it's lazy or greedy
-                if (*(pattern + 1) == '?') {
+                if (inside_cclass == 1) {
+                    t.type = T_LITERAL_CH;
+                } else if (*(pattern + 1) == '?') {
                     t.type = T_LAZY_PLUS;
                     pattern++;
                 } else
@@ -253,7 +263,11 @@ Token *tokenize_pattern(char *pattern) {
                 break;
 
             case '.':
-                t.type = T_META_CH;
+                if (inside_cclass == 1) {
+                    t.type = T_LITERAL_CH;
+                } else {
+                    t.type = T_META_CH;
+                }
                 t.ch = *pattern++;
                 *tp++ = t;
                 break;
@@ -444,7 +458,8 @@ char *perform_regex(State *start, char *string) {
             case S_CCLASS:
                 // If we get a match
                 if (match_ch_str(*string, s->data.cclass)) {
-                    regex_log("Character class ... matched with character \"%c\" in string \n", *string);
+                    regex_log("Character class \"%s\" matched with character \"%c\" in string \n",
+                           s->data.cclass, *string);
 
                     *sp++ = *string++;
                     if (s->next2)
@@ -452,7 +467,8 @@ char *perform_regex(State *start, char *string) {
 
                     s = s->next1;
                 } else {
-                    regex_log("Character class ... did not match with character \"%c\" in string \n", *string);
+                    regex_log("Character class \"%s\" did not match with character \"%c\" in string \n",
+                           s->data.cclass, *string);
                     do_backtrack = 1;
                 }
                 break;
@@ -534,10 +550,11 @@ char *perform_regex(State *start, char *string) {
 }
 
 
-// Returns 1 if the pattern is correct
+// Returns 0 if the pattern is correct
 int check_pattern_correctness(char *pattern) {
-    int a = 1;
-    a = state_altering_check(pattern);
+    int a = 0;
+    a += state_altering_check(pattern);
+    a += character_class_check(pattern);
     return a;
 }
 
@@ -550,8 +567,8 @@ int state_altering_check(char *p) {
 
     switch (*p) {
         case '*': case '+': case '?':
-            pattern_error(p, 0, "Meta character \"%c\" is not allowed at the start of the pattern\n", *p);
-            return 0;
+            pattern_error(p, 0, 0, "Meta character \"%c\" is not allowed at the start of the pattern\n", *p);
+            return 1;
         default:
             break;
     }
@@ -570,42 +587,71 @@ int state_altering_check(char *p) {
         if ((*c == '*' || *c == '+' || *c == '?') && (*(c + 1) == '*' || *(c + 1) == '+')) {
 
             // Ignore if the previous character is esacped or we are in a character class 
-                if (*(c - 1) != '\\' && inside_cclass != 1) {
-                        pattern_error(p, (int) ((c + 1) - p),
-                                "Meta character \"%c\" is not allowed after meta character \"%c\"\n",
-                                *(c + 1), *c);
-                        return 0;
+            if (*(c - 1) != '\\' && inside_cclass != 1) {
+                pattern_error(p, (int) ((c + 1) - p), 0,
+                        "Meta character \"%c\" is not allowed after meta character \"%c\"\n",
+                        *(c + 1), *c);
+                return 1;
 
-                }
+            }
         }
-        // Checking if tokens are next to each other
-#if 0
-        switch (*c) {
-            case '*': case '+': case '?':
-                // Chceking next character
-                switch (*(p + pp + 1)) {
-                    case '*': case '+':
-                        pattern_error(p, pp + 1,
-                                "Meta character \"%c\" is not allowed after meta character \"%c\"\n",
-                                *(p + pp + 1), c);
-                        return 0;
-                    default:
-                        break;
-                }
-                break;
-            default:
-                break;
-        }
-#endif
     }
 
-    return 1;
+    return 0;
+}
+
+int character_class_check(char *p) {
+    // First we make sure that there is a closing square brace in the pattern
+    // @FIXME: a pattern like [A-Z-a] will be parsed incorrectly
+    char *c = p - 1;
+    int inside_cclass = 0;
+    char *sb;
+
+    while (*++c != '\0') {
+        if (inside_cclass == 1) {
+            if (*c == ']')
+                inside_cclass = 0;
+
+            // We can check hyphens in here too
+            if (*c == '-' && *(c - 1) != '\\') { // Checking if it's escaped
+                if (*(c - 2) != '\\' && match_ch_str(*(c + 1), "]\\") == 0) { // Checking escapes
+                    if (*(c + 1) < *(c - 1)) {
+                        // should be range pattern error
+                        pattern_error(p, (int) (c - p) - 1, 2,
+                                "Character class error: Start of range is less than end of range");
+                        return 1;
+                    }
+                }
+                            
+            }
+
+        } else if (inside_cclass == 0) {
+            if (*c == '[') {
+                inside_cclass = 1;
+                sb = c;
+            } else if (*c == ']' && *(c - 1) != '\\') {
+                // Brace has to be escaped
+                pattern_error(p, (int) (c - p), 0, "Unmatched Brace in pattern");
+                return 1;
+            }
+        }
+    }
+
+    if (inside_cclass == 1) {
+        pattern_error(p, (int) (sb - p), 0, "Unmatched Brace in pattern");
+        return 1;
+    }
+
+    return 0;
+    
 }
 
 
-// Returns 1 if the token stream is correct
+
+
+// Returns 0 if the token stream is correct
 int check_tokens_correctness(Token *tokens) {
-    int a = 1;
+    int a = 0;
     return a;
 }
 
@@ -613,21 +659,19 @@ int check_tokens_correctness(Token *tokens) {
 char *create_cclass(Token **tokens) {
     char *cclass = malloc(sizeof(char) * MAX_STRING_SIZE);
     char *sp = cclass;
+    (*tokens)++; // Skipping the open brace
 
     while ((*tokens)->type != T_CLOSE_SB) {
-        switch ((*tokens)->type) {
+        // Hyphens usually denote range
+        if ((*tokens)->ch == '-') {
+            if (((*tokens) - 1)->type == T_LITERAL_CH && ((*tokens) + 1)->type == T_LITERAL_CH) {
+                // We've already collected the previous character
+                for (char i = ((*tokens) - 1)->ch + 1; i < ((*tokens) + 1)->ch; i++)
+                    *sp++ = i;
+            }
 
-            case T_LAZY_PLUS: case T_LAZY_STAR: case T_LAZY_QMARK:
-                // It's unlikely we hit this but we should collect both parts
-                *sp++ = '?';
-
-            case T_LITERAL_CH: case T_GREEDY_QMARK: case T_GREEDY_STAR: case T_GREEDY_PLUS: case T_META_CH:
-                // @NOTE : We don't check for collecting multiples of the same thing
-                *sp++ = (*tokens)->ch;
-                break;
-
-            case T_FINAL: default:
-                break;
+        } else {
+            *sp++ = (*tokens)->ch;
         }
         (*tokens)++;
     }
@@ -755,16 +799,19 @@ int match_ch_str(char ch, char *str) {
 
 
 // Allows nice printing showing where the error is in the pattern
-void pattern_error(char *p, unsigned int pos, char *msg, ...) {
-    printf("Error in pattern -> %s\n", p);
+void pattern_error(char *p, unsigned int pos, unsigned int range, char *msg, ...) {
+    static char error_msg[] = "Error in pattern -> ";
+    printf("%s%s\n", error_msg, p);
 
     // Constructing the string that points to the error in the pattern
     char str[MAX_STRING_SIZE];
     char *sp = str;
-    for (unsigned int i = 0; i < 20 + pos; i++) {
+    for (unsigned int i = 0; i < strlen(error_msg) + pos; i++) {
         *sp++ = ' ';
     }
     *sp++ = '^';
+    for (unsigned int i = 0; i < range; i++)
+        *sp++ = '~';
     *sp++ = '\n';
     *sp++ = '\0';
     printf(str);
@@ -776,9 +823,9 @@ void pattern_error(char *p, unsigned int pos, char *msg, ...) {
     va_end(args);
 }
 
-// Let's us easily surpress printing to the screen probably temporary
+// Let's us easily suppress printing to the screen probably temporary
 void regex_log(char *msg, ...) {
-    if (surpress_logging) return;
+    if (suppress_logging) return;
 
     va_list args;
     va_start(args, msg);

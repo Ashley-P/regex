@@ -10,3 +10,4 @@ Implemented features:
  - '??' Lazy quantifier (0 or 1)
  - '\*' Greedy quantifier (0 or more)
  - '\*?' Lazy quantifier (0 or more)
+ - '[a-z]' Character classes including ranges

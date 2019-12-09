@@ -76,7 +76,7 @@ int run_test(char *pattern, char *string, char *match) {
     printf("----- Test %d -----\n", test_num);
     printf("Pattern -> \"%s\" : String -> \"%s\" : Match -> \"%s\"\n", pattern, string, match);
     char *str;
-    str = regex(pattern, string, REGEX_SURPRESS_LOGGING);
+    str = regex(pattern, string, REGEX_SUPPRESS_LOGGING);
     printf("%s -> %s\n\n", pattern, match);
     if (!strcmp(str, match)) {
         return 1;

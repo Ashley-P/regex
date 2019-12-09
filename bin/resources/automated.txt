@@ -39,3 +39,11 @@
 "ab??" "a" "a"
 "ab??c" "ac" "ac"
 "ab??c" "ac" "ac"
+
+    Character classes
+"gr[ae]y" "grey" "grey"
+"gr[ae]y" "gray" "gray"
+"gr[ae]y" "griy" ""
+"[A-Za-z]+" "Anything I like" "Anything"
+"[A-Za-z ]+" "Anything I like" "Anything I like"
+"[0-9]+" "654987654" "654987654"
