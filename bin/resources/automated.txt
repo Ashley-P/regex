@@ -47,3 +47,10 @@
 "[A-Za-z]+" "Anything I like" "Anything"
 "[A-Za-z ]+" "Anything I like" "Anything I like"
 "[0-9]+" "654987654" "654987654"
+
+    Slightly more complex (involving capturing groups)
+"(one ?(two)? ?)+" "one two one one two two" "one two one one two "
+"Feb(ruary)? [0-9][0-9](nd)?" "Feb 22" "Feb 22"
+"Feb(ruary)? [0-9][0-9](nd)?" "February 22" "February 22"
+"Feb(ruary)? [0-9][0-9](nd)?" "Feb 22nd" "Feb 22nd"
+"Feb(ruary)? [0-9][0-9](nd)?" "February 22nd" "February 22nd"

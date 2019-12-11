@@ -33,8 +33,7 @@ typedef enum {
 
 typedef enum {
     // Special States
-    S_START = 1,
-    S_FINAL,
+    S_FINAL = 1,
     S_NODE,
 
     // Normal States
@@ -92,11 +91,10 @@ typedef enum {
     // Square brackets
     T_OPEN_SB      = 1 << 10,
     T_CLOSE_SB     = 1 << 11,
-#if 0
+
     // Parentheses
-    T_OPEN_P,
-    T_CLOSE_P,
-#endif
+    T_OPEN_P       = 1 << 12,
+    T_CLOSE_P      = 1 << 13,
 
 } TokenType;
 
@@ -122,7 +120,7 @@ static int suppress_logging = 0;
 /***** Function Prototypes *****/
 char *regex(char *pattern, char *string, unsigned int options);
 Token *tokenize_pattern(char *pattern);
-State *parse_tokens(Token *tokens);
+Fragment parse_tokens(Token **tokens);
 char *perform_regex(State *start, char *string);
 
 int check_pattern_correctness(char *pattern);
@@ -173,7 +171,15 @@ char *regex(char *pattern, char *string, unsigned int options) {
     if (check_tokens_correctness(tokens))
         return "";
 
-    State *start = parse_tokens(tokens);
+
+    Fragment fsm = parse_tokens(&tokens);
+    State *start = fsm.start;
+
+    // Adding the final state to the final fsm
+    StateData d = {.ch = '\0'};
+    State *final = create_state(S_FINAL, d, NULL, NULL);
+    point_state_list(fsm.list, final);
+    regex_log("\nFinal State %p, Node State\n", (void *) final);
 
     // Do the regex at each point of the string
     char *return_str = "";
@@ -203,6 +209,18 @@ Token *tokenize_pattern(char *pattern) {
 
     while (*pattern != '\0') {
         switch (*pattern) {
+            case '(': 
+                t.type = T_OPEN_P;
+                t.ch = *pattern++;
+                *tp++ = t;
+                break;
+
+            case ')': 
+                t.type = T_CLOSE_P;
+                t.ch = *pattern++;
+                *tp++ = t;
+                break;
+
             case '[': 
                 t.type = T_OPEN_SB;
                 t.ch = *pattern++;
@@ -291,17 +309,20 @@ Token *tokenize_pattern(char *pattern) {
 }
 
 
-State *parse_tokens(Token *tokens) {
+Fragment parse_tokens(Token **tokens) {
     regex_log("\n----- Parsing tokens -----\n");
 
     Fragment fragments[MAX_STACK_SIZE];
     Fragment *fp = fragments;
-    Fragment a, b;
+    Fragment a;
 
     StateData data;
     data.ch = '\0';
-    State *start = create_state(S_START, data, NULL, NULL);
+    State *start = create_state(S_NODE, data, NULL, NULL);
+    regex_log("State %p, Node State\n", (void *) start);
     State *s;
+
+    static int capturing_groups = 0;
 
     for (int i = 0; i < MAX_STACK_SIZE; i++) {
         fragments[i] = create_fragment(NULL, NULL);
@@ -309,10 +330,23 @@ State *parse_tokens(Token *tokens) {
 
     *fp++ = create_fragment(start, create_state_list(&start->next1));
 
-    while (tokens->type != T_FINAL) {
-        switch (tokens->type) { 
+    while ((*tokens)->type != T_FINAL) {
+        switch ((*tokens)->type) { 
+            // Open paren calls parse_(*tokens) again and waits for the returned fragment
+            case T_OPEN_P: 
+                regex_log("\nCapturing group %d\n", ++capturing_groups);
+                (*tokens)++;
+                *fp++ = parse_tokens(tokens);
+                //fp = link_fragments(fp, (*tokens));
+                break;
+
+            case T_CLOSE_P:
+                //fp = link_fragments(fp, (*tokens));
+                (*tokens)++;
+                return fragments[0];
+
             case T_OPEN_SB: 
-                data.cclass = create_cclass(&tokens);
+                data.cclass = create_cclass(&(*tokens));
                 s = create_state(S_CCLASS, data, NULL, NULL);
                 *fp++ = create_fragment(s, create_state_list(&s->next1));
 
@@ -321,28 +355,28 @@ State *parse_tokens(Token *tokens) {
 
                 // Concatanation of the top 2 fragments on the stack happen if the next token isn't
                 // one that alters the flow of the FSM
-                fp = link_fragments(fp, tokens);
-                tokens++;
+                fp = link_fragments(fp, (*tokens));
+                (*tokens)++;
                 break;
             case T_CLOSE_SB:
-                tokens++;
+                (*tokens)++;
                 break;
 
             case T_GREEDY_QMARK: case T_LAZY_QMARK:
                 a = *--fp;
                 data.ch = '\0';
 
-                s = (tokens->type == T_LAZY_QMARK) ? create_state(S_NODE, data, NULL, a.start)
+                s = ((*tokens)->type == T_LAZY_QMARK) ? create_state(S_NODE, data, NULL, a.start)
                                                    : create_state(S_NODE, data, a.start, NULL);
 
                 //point_state_list(a.list, s);
 
-                *fp++ = (tokens->type == T_LAZY_QMARK)
+                *fp++ = ((*tokens)->type == T_LAZY_QMARK)
                           ? create_fragment(s, append_lists(a.list, create_state_list(&s->next1)))
                           : create_fragment(s, append_lists(a.list, create_state_list(&s->next2)));
 
-                fp = link_fragments(fp, tokens);
-                tokens++;
+                fp = link_fragments(fp, (*tokens));
+                (*tokens)++;
                 regex_log("State %p, Node State\n", (void *) s);
                 break;
 
@@ -353,15 +387,15 @@ State *parse_tokens(Token *tokens) {
                 // Since there are minor differences between the lazy and greedy versions
                 // We can just use the ternary operator and save some redundancy
                 // @NOTE : Don't chain ternary operators together
-                s = (tokens->type == T_LAZY_STAR) ? create_state(S_NODE, data, NULL, a.start)
+                s = ((*tokens)->type == T_LAZY_STAR) ? create_state(S_NODE, data, NULL, a.start)
                                                   : create_state(S_NODE, data, a.start, NULL);
 
                 point_state_list(a.list, s);
 
-                *fp++ = (tokens->type == T_LAZY_STAR) ? create_fragment(s, create_state_list(&s->next1))
+                *fp++ = ((*tokens)->type == T_LAZY_STAR) ? create_fragment(s, create_state_list(&s->next1))
                                                       : create_fragment(s, create_state_list(&s->next2));
-                fp = link_fragments(fp, tokens);
-                tokens++;
+                fp = link_fragments(fp, (*tokens));
+                (*tokens)++;
                 regex_log("State %p, Node State\n", (void *) s);
                 break;
 
@@ -369,15 +403,15 @@ State *parse_tokens(Token *tokens) {
                 a = *--fp;
                 data.ch = '\0';
 
-                s = (tokens->type == T_LAZY_PLUS) ? create_state(S_NODE, data, NULL, a.start)
+                s = ((*tokens)->type == T_LAZY_PLUS) ? create_state(S_NODE, data, NULL, a.start)
                                                   : create_state(S_NODE, data, a.start, NULL);
 
                 point_state_list(a.list, s);
 
-                *fp++ = (tokens->type == T_LAZY_PLUS) ? create_fragment(a.start, create_state_list(&s->next1))
+                *fp++ = ((*tokens)->type == T_LAZY_PLUS) ? create_fragment(a.start, create_state_list(&s->next1))
                                                       : create_fragment(a.start, create_state_list(&s->next2));
-                fp = link_fragments(fp, tokens);
-                tokens++;
+                fp = link_fragments(fp, (*tokens));
+                (*tokens)++;
                 regex_log("State %p, Node State\n", (void *) s);
                 break;
 
@@ -389,12 +423,12 @@ State *parse_tokens(Token *tokens) {
                 regex_log("State %p, Type = %s, ch = %s\n",
                         (void *) s, state_type_to_string(s->type), meta_ch_type_to_string(s->data.meta));
 
-                fp = link_fragments(fp, tokens);
-                tokens++;
+                fp = link_fragments(fp, (*tokens));
+                (*tokens)++;
                 break;
 
             case T_LITERAL_CH:
-                data.ch = tokens->ch;
+                data.ch = (*tokens)->ch;
                 s = create_state(S_LITERAL_CH, data, NULL, NULL);
                 *fp++ = create_fragment(s, create_state_list(&s->next1));
 
@@ -403,14 +437,14 @@ State *parse_tokens(Token *tokens) {
 
                 // Concatanation of the top 2 fragments on the stack happen if the next token isn't
                 // one that alters the flow of the FSM
-                fp = link_fragments(fp, tokens);
-                tokens++;
+                fp = link_fragments(fp, (*tokens));
+                (*tokens)++;
                 break;
             default:
                 regex_log("Internal Error: Unknown/unhandled token type \"%s\" in function %s\n",
-                        token_type_to_string(tokens->type), __func__);
+                        token_type_to_string((*tokens)->type), __func__);
                 exit(0);
-                tokens++;
+                (*tokens)++;
                 break;
         }
     }
@@ -422,16 +456,18 @@ State *parse_tokens(Token *tokens) {
         exit(0);
     }
 #endif
-    //fp = link_fragments(fp, tokens);
+    //fp = link_fragments(fp, (*tokens));
 
     // Adding the final state
+#if 0
     data.ch = '\0';
     s = create_state(S_FINAL, data, NULL, NULL);
     point_state_list((*--fp).list, s);
+#endif
 
     regex_log("Parsing complete\n");
 
-    return start;
+    return fragments[0];
 }
 
 // Naviagtes the FSM and (should) returns the matched sub-string
@@ -443,12 +479,14 @@ char *perform_regex(State *start, char *string) {
     BacktrackData b;
     int do_backtrack = 0;
 
-    State *s = start->next1; // This is the state we are checking
+    // State *s = start->next1; // This is the state we are checking
+    State *s = start;
     char *rtn_str = malloc(sizeof(char) * MAX_STRING_SIZE);
     char *sp = rtn_str;
-
+#if 0
     if (start->next2)
         *btp++ = create_backtrack_data(string, sp, start->next2);
+#endif
 
 
     while (1) {
@@ -752,7 +790,6 @@ BacktrackData create_backtrack_data(char *string, char *sp, State *s) {
 
 char *state_type_to_string(StateType type) {
     switch (type) {
-        case S_START: return "S_START";
         case S_FINAL: return "S_FINAL";
         case S_NODE: return "S_NODE";
         case S_LITERAL_CH: return "S_LITERAL_CH";
@@ -775,6 +812,8 @@ char *token_type_to_string(TokenType type) {
         case T_LAZY_QMARK: return "T_LAZY_QMARK";
         case T_OPEN_SB: return "T_OPEN_SB";
         case T_CLOSE_SB: return "T_CLOSE_SB";
+        case T_OPEN_P: return "T_OPEN_P";
+        case T_CLOSE_P: return "T_CLOSE_P";
         default: return "Unhandled case in token_type_to_string";
     }
 }
