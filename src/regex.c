@@ -73,20 +73,23 @@ typedef struct Fragment_ {
 typedef enum {
     T_LITERAL_CH   = 1 << 0,
     T_META_CH      = 1 << 1,  // For non state altering meta characters e.g '.'
-    T_FINAL        = 1 << 3,
+    T_FINAL        = 1 << 2,
     
-    T_GREEDY_PLUS  = 1 << 4, // '+'
-    T_LAZY_PLUS    = 1 << 5, // '+?'
+    T_GREEDY_PLUS  = 1 << 3, // '+'
+    T_LAZY_PLUS    = 1 << 4, // '+?'
 
-    T_GREEDY_STAR  = 1 << 6, // '*'
-    T_LAZY_STAR    = 1 << 7, // '*?'
+    T_GREEDY_STAR  = 1 << 5, // '*'
+    T_LAZY_STAR    = 1 << 6, // '*?'
 
-    T_GREEDY_QMARK = 1 << 8, // '?'
-    T_LAZY_QMARK   = 1 << 9, // '??'
+    T_GREEDY_QMARK = 1 << 7, // '?'
+    T_LAZY_QMARK   = 1 << 8, // '??'
+
+    T_ALTERNATION  = 1 << 9,
 
     T_STATE_ALTERING = T_GREEDY_PLUS | T_LAZY_PLUS |
                        T_GREEDY_STAR | T_LAZY_STAR |
-                       T_GREEDY_QMARK | T_LAZY_QMARK,
+                       T_GREEDY_QMARK | T_LAZY_QMARK |
+                       1 << 12,
 
     // Square brackets
     T_OPEN_SB      = 1 << 10,
@@ -235,6 +238,16 @@ Token *tokenize_pattern(char *pattern) {
                 inside_cclass = 0;
                 break;
 
+            case '|':
+                if (inside_cclass == 1) {
+                    t.type = T_LITERAL_CH;
+                } else {
+                    t.type = T_ALTERNATION;
+                }
+                t.ch = *pattern++;
+                *tp++ = t;
+                break;
+
             case '?':
                 // Peek the next character to determine whether it's lazy or greedy
                 if (inside_cclass == 1) {
@@ -314,7 +327,7 @@ Fragment parse_tokens(Token **tokens) {
 
     Fragment fragments[MAX_STACK_SIZE];
     Fragment *fp = fragments;
-    Fragment a;
+    Fragment a, b;
 
     StateData data;
     data.ch = '\0';
@@ -337,7 +350,7 @@ Fragment parse_tokens(Token **tokens) {
                 regex_log("\nCapturing group %d\n", ++capturing_groups);
                 (*tokens)++;
                 *fp++ = parse_tokens(tokens);
-                //fp = link_fragments(fp, (*tokens));
+                fp = link_fragments(fp, (*tokens));
                 break;
 
             case T_CLOSE_P:
@@ -362,6 +375,18 @@ Fragment parse_tokens(Token **tokens) {
                 (*tokens)++;
                 break;
 
+            case T_ALTERNATION:
+                (*tokens)++;
+                a = *--fp;
+                b = parse_tokens(tokens);
+                //b = *--fp;
+                data.ch = '\0';
+                s = create_state(S_NODE, data, a.start, b.start);
+                regex_log("Alternation State %p, Node State\n", (void *) s);
+                *fp++ = create_fragment(s, append_lists(a.list, b.list));
+                fp = link_fragments(fp, (*tokens));
+                break;
+
             case T_GREEDY_QMARK: case T_LAZY_QMARK:
                 a = *--fp;
                 data.ch = '\0';
@@ -377,7 +402,7 @@ Fragment parse_tokens(Token **tokens) {
 
                 fp = link_fragments(fp, (*tokens));
                 (*tokens)++;
-                regex_log("State %p, Node State\n", (void *) s);
+                regex_log("? State %p, Node State\n", (void *) s);
                 break;
 
             case T_GREEDY_STAR: case T_LAZY_STAR:
@@ -396,7 +421,7 @@ Fragment parse_tokens(Token **tokens) {
                                                       : create_fragment(s, create_state_list(&s->next2));
                 fp = link_fragments(fp, (*tokens));
                 (*tokens)++;
-                regex_log("State %p, Node State\n", (void *) s);
+                regex_log("* State %p, Node State\n", (void *) s);
                 break;
 
             case T_GREEDY_PLUS: case T_LAZY_PLUS:
@@ -412,7 +437,7 @@ Fragment parse_tokens(Token **tokens) {
                                                       : create_fragment(a.start, create_state_list(&s->next2));
                 fp = link_fragments(fp, (*tokens));
                 (*tokens)++;
-                regex_log("State %p, Node State\n", (void *) s);
+                regex_log("+ State %p, Node State\n", (void *) s);
                 break;
 
             case T_META_CH:
@@ -810,6 +835,7 @@ char *token_type_to_string(TokenType type) {
         case T_LAZY_STAR: return "T_LAZY_STAR";
         case T_GREEDY_QMARK: return "T_GREEDY_QMARK";
         case T_LAZY_QMARK: return "T_LAZY_QMARK";
+        case T_ALTERNATION: return "T_ALTERNATION";
         case T_OPEN_SB: return "T_OPEN_SB";
         case T_CLOSE_SB: return "T_CLOSE_SB";
         case T_OPEN_P: return "T_OPEN_P";
