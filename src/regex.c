@@ -102,6 +102,7 @@ Fragment create_fragment(State *s, StateList *l);
 void point_state_list(StateList *l, State *a);
 StateList *create_state_list(State **first);
 StateList *append_lists(StateList *a, StateList *b);
+char *create_character_class(char *sp, StateData *data);
 
 BacktrackData create_backtrack_data(char *string, char *sp, State *s);
 
@@ -180,6 +181,18 @@ Fragment parse_pattern(char *pattern) {
 
     while (*sp != '\0') {
         switch (*sp) {
+            case '[':
+                sp = create_character_class(++sp, &data);
+                s = create_state(S_CCLASS, data, NULL, NULL);
+                *fp++ = create_fragment(s, create_state_list(&s->next1));
+
+                // check if we should link this fragment with the one before it
+                fp = link_fragments(fp, sp);
+                regex_log("State %p, Type = %s, range = %s\n",
+                        (void *) s, state_type_to_string(s->type), s->data.cclass);
+                sp++;
+                break;
+
             case '?':
                 a = *--fp;
                 data.ch = '\0';
@@ -546,6 +559,33 @@ StateList *append_lists(StateList *a, StateList *b) {
     free(b);
     return rtn;
 }
+
+
+char *create_character_class(char *sp, StateData *data) {
+    data->cclass = malloc(sizeof(char) * MAX_STRING_SIZE);
+    char *cp = &data->cclass[0];
+    // @TODO: We don't look for backwards slashes right now
+
+    while (*sp != ']') {
+        if (*sp == '-') {
+            if (*(sp - 1) != '\\' && *(sp - 1) != '[' && peek_ch(sp) != '\\' && peek_ch(sp) != ']') {
+                // We've already collected the first character
+                for (int i = *(sp - 1) + 1; i <= peek_ch(sp); i++)
+                    *cp++ = i;
+
+            }
+            sp += 2;
+        } else // collect as normal
+        *cp++ = *sp++; 
+            
+    }
+
+    *cp++ = '\0';
+
+    return sp;
+}
+
+
 
 BacktrackData create_backtrack_data(char *string, char *sp, State *s) {
     BacktrackData rtn;

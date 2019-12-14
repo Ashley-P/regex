@@ -46,7 +46,7 @@
 "gr[ae]y" "griy" ""
 "[A-Za-z]+" "Anything I like" "Anything"
 "[A-Za-z ]+" "Anything I like" "Anything I like"
-"[0-9]+" "654987654" "654987654"
+"[0-9]+" "1234567890" "1234567890"
 
     Slightly more complex (involving capturing groups)
 "(one ?(two)? ?)+" "one two one one two two" "one two one one two "
