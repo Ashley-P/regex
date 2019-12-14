@@ -69,43 +69,6 @@ typedef struct Fragment_ {
     struct StateList_ *list;
 } Fragment;
 
-
-typedef enum {
-    T_LITERAL_CH   = 1 << 0,
-    T_META_CH      = 1 << 1,  // For non state altering meta characters e.g '.'
-    T_FINAL        = 1 << 2,
-    
-    T_GREEDY_PLUS  = 1 << 3, // '+'
-    T_LAZY_PLUS    = 1 << 4, // '+?'
-
-    T_GREEDY_STAR  = 1 << 5, // '*'
-    T_LAZY_STAR    = 1 << 6, // '*?'
-
-    T_GREEDY_QMARK = 1 << 7, // '?'
-    T_LAZY_QMARK   = 1 << 8, // '??'
-
-    T_ALTERNATION  = 1 << 9,
-
-    T_STATE_ALTERING = T_GREEDY_PLUS | T_LAZY_PLUS |
-                       T_GREEDY_STAR | T_LAZY_STAR |
-                       T_GREEDY_QMARK | T_LAZY_QMARK |
-                       1 << 12,
-
-    // Square brackets
-    T_OPEN_SB      = 1 << 10,
-    T_CLOSE_SB     = 1 << 11,
-
-    // Parentheses
-    T_OPEN_P       = 1 << 12,
-    T_CLOSE_P      = 1 << 13,
-
-} TokenType;
-
-typedef struct Token_ {
-    TokenType type;
-    char ch;
-} Token;
-
 typedef struct BacktrackData_ {
     char *string;
     char *sp;
@@ -122,21 +85,17 @@ static int suppress_logging = 0;
 
 /***** Function Prototypes *****/
 char *regex(char *pattern, char *string, unsigned int options);
-Token *tokenize_pattern(char *pattern);
-Fragment parse_tokens(Token **tokens);
+char *pre_parse_pattern(char *pattern);
+Fragment parse_pattern(char *pattern);
 char *perform_regex(State *start, char *string);
 
 int check_pattern_correctness(char *pattern);
 int state_altering_check(char *p);
 int character_class_check(char *p);
 
-int check_tokens_correctness(Token *tokens);
-
-char *create_cclass(Token **tokens);
 
 
 /***** Utility functions *****/
-Fragment *link_fragments(Fragment *fp, Token *tokens);
 State *create_state(StateType type, StateData data, State * const next1, State * const next2);
 Fragment create_fragment(State *s, StateList *l);
 void point_state_list(StateList *l, State *a);
@@ -146,10 +105,11 @@ StateList *append_lists(StateList *a, StateList *b);
 BacktrackData create_backtrack_data(char *string, char *sp, State *s);
 
 char *state_type_to_string(StateType type);
-char *token_type_to_string(TokenType type);
 char *meta_ch_type_to_string(MetaChType type);
 
+// String stuff
 int match_ch_str(char ch, char *str);
+static inline char peek_ch(char *str);
 
 void pattern_error(char *p, unsigned int pos, unsigned int range, char *msg, ...);
 void regex_log(char *msg, ...);
@@ -168,14 +128,8 @@ char *regex(char *pattern, char *string, unsigned int options) {
     if (check_pattern_correctness(pattern))
         return "";
 
-    Token *tokens = tokenize_pattern(pattern);
-
-    // We'd do some checking here maybe
-    if (check_tokens_correctness(tokens))
-        return "";
-
-
-    Fragment fsm = parse_tokens(&tokens);
+    char *new_pattern = pre_parse_pattern(pattern);
+    Fragment fsm = parse_pattern(new_pattern);
     State *start = fsm.start;
 
     // Adding the final state to the final fsm
@@ -203,296 +157,50 @@ char *regex(char *pattern, char *string, unsigned int options) {
 }
 
 
-Token *tokenize_pattern(char *pattern) {
-    regex_log("\n----- Tokenizing pattern -----\n");
-    Token *tokens = malloc(sizeof(Token) * MAX_STACK_SIZE);
-    Token *tp = tokens;
-    Token t;
-    int inside_cclass = 0;
-
-    while (*pattern != '\0') {
-        switch (*pattern) {
-            case '(': 
-                t.type = T_OPEN_P;
-                t.ch = *pattern++;
-                *tp++ = t;
-                break;
-
-            case ')': 
-                t.type = T_CLOSE_P;
-                t.ch = *pattern++;
-                *tp++ = t;
-                break;
-
-            case '[': 
-                t.type = T_OPEN_SB;
-                t.ch = *pattern++;
-                *tp++ = t;
-                inside_cclass = 1;
-                break;
-
-            case ']': 
-                t.type = T_CLOSE_SB;
-                t.ch = *pattern++;
-                *tp++ = t;
-                inside_cclass = 0;
-                break;
-
-            case '|':
-                if (inside_cclass == 1) {
-                    t.type = T_LITERAL_CH;
-                } else {
-                    t.type = T_ALTERNATION;
-                }
-                t.ch = *pattern++;
-                *tp++ = t;
-                break;
-
-            case '?':
-                // Peek the next character to determine whether it's lazy or greedy
-                if (inside_cclass == 1) {
-                    t.type = T_LITERAL_CH;
-                } else if (*(pattern + 1) == '?') {
-                    t.type = T_LAZY_QMARK;
-                    pattern++;
-                } else
-                    t.type = T_GREEDY_QMARK;
-
-                t.ch = '?';
-                *tp++ = t;
-                pattern++;
-                break;
-
-            case '*':
-                // Peek the next character to determine whether it's lazy or greedy
-                if (inside_cclass == 1) {
-                    t.type = T_LITERAL_CH;
-                } else if (*(pattern + 1) == '?') {
-                    t.type = T_LAZY_STAR;
-                    pattern++;
-                } else
-                    t.type = T_GREEDY_STAR;
-
-                t.ch = '*';
-                *tp++ = t;
-                pattern++;
-                break;
-
-            case '+':
-                // Peek the next character to determine whether it's lazy or greedy
-                if (inside_cclass == 1) {
-                    t.type = T_LITERAL_CH;
-                } else if (*(pattern + 1) == '?') {
-                    t.type = T_LAZY_PLUS;
-                    pattern++;
-                } else
-                    t.type = T_GREEDY_PLUS;
-
-                t.ch = '+';
-                *tp++ = t;
-                pattern++;
-                break;
-
-            case '.':
-                if (inside_cclass == 1) {
-                    t.type = T_LITERAL_CH;
-                } else {
-                    t.type = T_META_CH;
-                }
-                t.ch = *pattern++;
-                *tp++ = t;
-                break;
-
-            // Literal Characters
-            default:
-                t.type = T_LITERAL_CH;
-                t.ch = *pattern++;
-                *tp++ = t;
-                break;
-        }
-        regex_log("TokenType = %s, ch = %c\n", token_type_to_string((tp - 1)->type), (tp - 1)->ch);
-    }
-
-    t.type = T_FINAL;
-    t.ch = '\0';
-    *tp++ = t;
-
-    regex_log("Tokenizing complete\n");
-    return tokens;
+// Changing up the pattern slightly so that the parsing works
+char *pre_parse_pattern(char *pattern) {
+    return pattern;
 }
 
-
-Fragment parse_tokens(Token **tokens) {
-    regex_log("\n----- Parsing tokens -----\n");
-
-    Fragment fragments[MAX_STACK_SIZE];
-    Fragment *fp = fragments;
+Fragment parse_pattern(char *pattern) {
+    regex_log("\n----- Parsing pattern -----\n");
+    Fragment stack[MAX_STACK_SIZE];
+    Fragment *fp = &stack[0]; // fragments pointer
     Fragment a, b;
 
+    char *sp = pattern;; // string pointer
+    
     StateData data;
     data.ch = '\0';
-    State *start = create_state(S_NODE, data, NULL, NULL);
-    regex_log("State %p, Node State\n", (void *) start);
-    State *s;
+    State *s = create_state(S_NODE, data, NULL, NULL);
+    // a start start for the entire fragment stack
 
-    static int capturing_groups = 0;
+    *fp++ = create_fragment(s, create_state_list(&s->next1));
 
-    for (int i = 0; i < MAX_STACK_SIZE; i++) {
-        fragments[i] = create_fragment(NULL, NULL);
-    }
-
-    *fp++ = create_fragment(start, create_state_list(&start->next1));
-
-    while ((*tokens)->type != T_FINAL) {
-        switch ((*tokens)->type) { 
-            // Open paren calls parse_(*tokens) again and waits for the returned fragment
-            case T_OPEN_P: 
-                regex_log("\nCapturing group %d\n", ++capturing_groups);
-                (*tokens)++;
-                *fp++ = parse_tokens(tokens);
-                fp = link_fragments(fp, (*tokens));
-                break;
-
-            case T_CLOSE_P:
-                //fp = link_fragments(fp, (*tokens));
-                (*tokens)++;
-                return fragments[0];
-
-            case T_OPEN_SB: 
-                data.cclass = create_cclass(&(*tokens));
-                s = create_state(S_CCLASS, data, NULL, NULL);
-                *fp++ = create_fragment(s, create_state_list(&s->next1));
-
-                regex_log("State %p, Type = %s, range = %s\n",
-                        (void *) s, state_type_to_string(s->type), s->data.cclass);
-
-                // Concatanation of the top 2 fragments on the stack happen if the next token isn't
-                // one that alters the flow of the FSM
-                fp = link_fragments(fp, (*tokens));
-                (*tokens)++;
-                break;
-            case T_CLOSE_SB:
-                (*tokens)++;
-                break;
-
-            case T_ALTERNATION:
-                (*tokens)++;
-                a = *--fp;
-                b = parse_tokens(tokens);
-                //b = *--fp;
-                data.ch = '\0';
-                s = create_state(S_NODE, data, a.start, b.start);
-                regex_log("Alternation State %p, Node State\n", (void *) s);
-                *fp++ = create_fragment(s, append_lists(a.list, b.list));
-                fp = link_fragments(fp, (*tokens));
-                break;
-
-            case T_GREEDY_QMARK: case T_LAZY_QMARK:
-                a = *--fp;
-                data.ch = '\0';
-
-                s = ((*tokens)->type == T_LAZY_QMARK) ? create_state(S_NODE, data, NULL, a.start)
-                                                   : create_state(S_NODE, data, a.start, NULL);
-
-                //point_state_list(a.list, s);
-
-                *fp++ = ((*tokens)->type == T_LAZY_QMARK)
-                          ? create_fragment(s, append_lists(a.list, create_state_list(&s->next1)))
-                          : create_fragment(s, append_lists(a.list, create_state_list(&s->next2)));
-
-                fp = link_fragments(fp, (*tokens));
-                (*tokens)++;
-                regex_log("? State %p, Node State\n", (void *) s);
-                break;
-
-            case T_GREEDY_STAR: case T_LAZY_STAR:
-                a = *--fp;
-                data.ch = '\0';
-
-                // Since there are minor differences between the lazy and greedy versions
-                // We can just use the ternary operator and save some redundancy
-                // @NOTE : Don't chain ternary operators together
-                s = ((*tokens)->type == T_LAZY_STAR) ? create_state(S_NODE, data, NULL, a.start)
-                                                  : create_state(S_NODE, data, a.start, NULL);
-
-                point_state_list(a.list, s);
-
-                *fp++ = ((*tokens)->type == T_LAZY_STAR) ? create_fragment(s, create_state_list(&s->next1))
-                                                      : create_fragment(s, create_state_list(&s->next2));
-                fp = link_fragments(fp, (*tokens));
-                (*tokens)++;
-                regex_log("* State %p, Node State\n", (void *) s);
-                break;
-
-            case T_GREEDY_PLUS: case T_LAZY_PLUS:
-                a = *--fp;
-                data.ch = '\0';
-
-                s = ((*tokens)->type == T_LAZY_PLUS) ? create_state(S_NODE, data, NULL, a.start)
-                                                  : create_state(S_NODE, data, a.start, NULL);
-
-                point_state_list(a.list, s);
-
-                *fp++ = ((*tokens)->type == T_LAZY_PLUS) ? create_fragment(a.start, create_state_list(&s->next1))
-                                                      : create_fragment(a.start, create_state_list(&s->next2));
-                fp = link_fragments(fp, (*tokens));
-                (*tokens)++;
-                regex_log("+ State %p, Node State\n", (void *) s);
-                break;
-
-            case T_META_CH:
-                data.meta = M_ANY_CH;
-                s = create_state(S_META_CH, data, NULL, NULL);
-                *fp++ = create_fragment(s, create_state_list(&s->next1));
-
-                regex_log("State %p, Type = %s, ch = %s\n",
-                        (void *) s, state_type_to_string(s->type), meta_ch_type_to_string(s->data.meta));
-
-                fp = link_fragments(fp, (*tokens));
-                (*tokens)++;
-                break;
-
-            case T_LITERAL_CH:
-                data.ch = (*tokens)->ch;
+    while (*sp != '\0') {
+        switch (*sp) {
+            default: // Normal characters
+                data.ch = *sp;
                 s = create_state(S_LITERAL_CH, data, NULL, NULL);
                 *fp++ = create_fragment(s, create_state_list(&s->next1));
 
+                // check if we should link this fragment with the one before it
+                if (match_ch_str(peek_ch(sp), "?+*") == 0) {
+                    b = *--fp;
+                    a = *--fp;
+                    point_state_list(a.list, b.start);
+                    *fp++ = create_fragment(a.start, b.list);
+                }
+
                 regex_log("State %p, Type = %s, ch = %c\n",
                         (void *) s, state_type_to_string(s->type), s->data.ch);
-
-                // Concatanation of the top 2 fragments on the stack happen if the next token isn't
-                // one that alters the flow of the FSM
-                fp = link_fragments(fp, (*tokens));
-                (*tokens)++;
-                break;
-            default:
-                regex_log("Internal Error: Unknown/unhandled token type \"%s\" in function %s\n",
-                        token_type_to_string((*tokens)->type), __func__);
-                exit(0);
-                (*tokens)++;
+                sp++;
                 break;
         }
     }
 
-    // If we aren't left with one fragment at this point something has gone wrong
-#if 0
-    if (fragments != fp-1) {
-        regex_log("Uh oh\n");
-        exit(0);
-    }
-#endif
-    //fp = link_fragments(fp, (*tokens));
 
-    // Adding the final state
-#if 0
-    data.ch = '\0';
-    s = create_state(S_FINAL, data, NULL, NULL);
-    point_state_list((*--fp).list, s);
-#endif
-
-    regex_log("Parsing complete\n");
-
-    return fragments[0];
+    return stack[0];
 }
 
 // Naviagtes the FSM and (should) returns the matched sub-string
@@ -622,7 +330,7 @@ int check_pattern_correctness(char *pattern) {
 }
 
 /**
- * State altering tokens can't be next to each other or at the start of the pattern
+ * State altering characters can't be next to each other or at the start of the pattern
  * e.g "ab?+" "+ab"
  */
 int state_altering_check(char *p) {
@@ -710,51 +418,7 @@ int character_class_check(char *p) {
 }
 
 
-
-
-// Returns 0 if the token stream is correct
-int check_tokens_correctness(Token *tokens) {
-    int a = 0;
-    return a;
-}
-
-
-char *create_cclass(Token **tokens) {
-    char *cclass = malloc(sizeof(char) * MAX_STRING_SIZE);
-    char *sp = cclass;
-    (*tokens)++; // Skipping the open brace
-
-    while ((*tokens)->type != T_CLOSE_SB) {
-        // Hyphens usually denote range
-        if ((*tokens)->ch == '-') {
-            if (((*tokens) - 1)->type == T_LITERAL_CH && ((*tokens) + 1)->type == T_LITERAL_CH) {
-                // We've already collected the previous character
-                for (char i = ((*tokens) - 1)->ch + 1; i < ((*tokens) + 1)->ch; i++)
-                    *sp++ = i;
-            }
-
-        } else {
-            *sp++ = (*tokens)->ch;
-        }
-        (*tokens)++;
-    }
-    *sp++ = '\0';
-    return cclass;
-}
-
 /***** Utility functions *****/
-Fragment *link_fragments(Fragment *fp, Token *tokens) {
-    // Peeking the next token
-    if (!((tokens + 1)->type & T_STATE_ALTERING)) {
-        Fragment b = *--fp;
-        Fragment a = *--fp;
-        point_state_list(a.list, b.start);
-        *fp++ = create_fragment(a.start, b.list);
-    }
-
-    return fp;
-}
-
 State *create_state(StateType type, StateData data, State * const next1, State * const next2) {
     State *a = malloc(sizeof(State));
     a->type  = type;
@@ -824,26 +488,6 @@ char *state_type_to_string(StateType type) {
     }
 }
 
-char *token_type_to_string(TokenType type) {
-    switch (type) {
-        case T_LITERAL_CH: return "T_LITERAL_CH";
-        case T_META_CH: return "T_META_CH";
-        case T_FINAL: return "T_FINAL";
-        case T_GREEDY_PLUS: return "T_GREEDY_PLUS";
-        case T_LAZY_PLUS: return "T_LAZY_PLUS";
-        case T_GREEDY_STAR: return "T_GREEDY_STAR";
-        case T_LAZY_STAR: return "T_LAZY_STAR";
-        case T_GREEDY_QMARK: return "T_GREEDY_QMARK";
-        case T_LAZY_QMARK: return "T_LAZY_QMARK";
-        case T_ALTERNATION: return "T_ALTERNATION";
-        case T_OPEN_SB: return "T_OPEN_SB";
-        case T_CLOSE_SB: return "T_CLOSE_SB";
-        case T_OPEN_P: return "T_OPEN_P";
-        case T_CLOSE_P: return "T_CLOSE_P";
-        default: return "Unhandled case in token_type_to_string";
-    }
-}
-
 char *meta_ch_type_to_string(MetaChType type) {
     switch (type) {
         case M_ANY_CH: return "M_ANY_CH";
@@ -862,6 +506,9 @@ int match_ch_str(char ch, char *str) {
     return 0;
 }
 
+static inline char peek_ch(char *str) {
+    return *(str+1);
+}
 
 // Allows nice printing showing where the error is in the pattern
 void pattern_error(char *p, unsigned int pos, unsigned int range, char *msg, ...) {
