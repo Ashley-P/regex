@@ -180,6 +180,47 @@ Fragment parse_pattern(char *pattern) {
 
     while (*sp != '\0') {
         switch (*sp) {
+            case '?':
+                a = *--fp;
+                data.ch = '\0';
+
+                s = (peek_ch(sp) == '?') ? create_state(S_NODE, data, NULL, a.start)
+                                         : create_state(S_NODE, data, a.start, NULL);
+
+                //point_state_list(a.list, s);
+
+                *fp++ = (peek_ch(sp) == '?')
+                          ? create_fragment(s, append_lists(a.list, create_state_list(&s->next1)))
+                          : create_fragment(s, append_lists(a.list, create_state_list(&s->next2)));
+
+                sp += (peek_ch(sp) == '?') ? 1 : 0;
+                fp = link_fragments(fp, sp);
+                sp++;
+                regex_log("State %p, Node State\n", (void *) s);
+                break;
+
+            case '*':
+                a = *--fp;
+                data.ch = '\0';
+
+                // Since there are minor differences between the lazy and greedy versions
+                // We can just use the ternary operator and save some redundancy
+                // @NOTE : Don't chain ternary operators together
+                s = (peek_ch(sp) == '?') ? create_state(S_NODE, data, NULL, a.start)
+                                         : create_state(S_NODE, data, a.start, NULL);
+
+                point_state_list(a.list, s);
+
+                *fp++ = (peek_ch(sp) == '?') ? create_fragment(s, create_state_list(&s->next1))
+                                             : create_fragment(s, create_state_list(&s->next2));
+
+
+                sp += (peek_ch(sp) == '?') ? 1 : 0;
+                fp = link_fragments(fp, sp);
+                sp++;
+                regex_log("State %p, Node State\n", (void *) s);
+
+                break;
             case '+':
                 a = *--fp;
                 data.ch = '\0';
@@ -192,14 +233,11 @@ Fragment parse_pattern(char *pattern) {
                 *fp++ = (peek_ch(sp) == '?') ? create_fragment(a.start, create_state_list(&s->next1))
                                              : create_fragment(a.start, create_state_list(&s->next2));
 
+                sp += (peek_ch(sp) == '?') ? 1 : 0;
                 fp = link_fragments(fp, sp);
-
-                if (peek_ch(sp) == '?')
-                    sp += 2;
-                else
-                    sp += 1;
-
+                sp++;
                 regex_log("State %p, Node State\n", (void *) s);
+
                 break;
 
             case '.':
