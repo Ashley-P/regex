@@ -96,6 +96,7 @@ int character_class_check(char *p);
 
 
 /***** Utility functions *****/
+Fragment *link_fragments(Fragment *fp, char *sp);
 State *create_state(StateType type, StateData data, State * const next1, State * const next2);
 Fragment create_fragment(State *s, StateList *l);
 void point_state_list(StateList *l, State *a);
@@ -179,19 +180,46 @@ Fragment parse_pattern(char *pattern) {
 
     while (*sp != '\0') {
         switch (*sp) {
+            case '+':
+                a = *--fp;
+                data.ch = '\0';
+
+                s = (peek_ch(sp) == '?') ? create_state(S_NODE, data, NULL, a.start)
+                                         : create_state(S_NODE, data, a.start, NULL);
+
+                point_state_list(a.list, s);
+
+                *fp++ = (peek_ch(sp) == '?') ? create_fragment(a.start, create_state_list(&s->next1))
+                                             : create_fragment(a.start, create_state_list(&s->next2));
+
+                fp = link_fragments(fp, sp);
+
+                if (peek_ch(sp) == '?')
+                    sp += 2;
+                else
+                    sp += 1;
+
+                regex_log("State %p, Node State\n", (void *) s);
+                break;
+
+            case '.':
+                data.meta = M_ANY_CH;
+                s = create_state(S_META_CH, data, NULL, NULL);
+                *fp++ = create_fragment(s, create_state_list(&s->next1));
+
+                fp = link_fragments(fp, sp);
+                regex_log("State %p, Type = %s, ch = %c\n",
+                        (void *) s, state_type_to_string(s->type), s->data.ch);
+                sp++;
+                break;
+
             default: // Normal characters
                 data.ch = *sp;
                 s = create_state(S_LITERAL_CH, data, NULL, NULL);
                 *fp++ = create_fragment(s, create_state_list(&s->next1));
 
                 // check if we should link this fragment with the one before it
-                if (match_ch_str(peek_ch(sp), "?+*") == 0) {
-                    b = *--fp;
-                    a = *--fp;
-                    point_state_list(a.list, b.start);
-                    *fp++ = create_fragment(a.start, b.list);
-                }
-
+                fp = link_fragments(fp, sp);
                 regex_log("State %p, Type = %s, ch = %c\n",
                         (void *) s, state_type_to_string(s->type), s->data.ch);
                 sp++;
@@ -419,6 +447,19 @@ int character_class_check(char *p) {
 
 
 /***** Utility functions *****/
+Fragment *link_fragments(Fragment *fp, char *sp) {
+    Fragment a, b;
+
+    if (match_ch_str(peek_ch(sp), "?+*") == 0) {
+        b = *--fp;
+        a = *--fp;
+        point_state_list(a.list, b.start);
+        *fp++ = create_fragment(a.start, b.list);
+    }
+
+    return fp;
+}
+
 State *create_state(StateType type, StateData data, State * const next1, State * const next2) {
     State *a = malloc(sizeof(State));
     a->type  = type;
