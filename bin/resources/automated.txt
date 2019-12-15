@@ -48,6 +48,12 @@
 "[A-Za-z ]+" "Anything I like" "Anything I like"
 "[0-9]+" "1234567890" "1234567890"
 
+    Reverse character classes
+"[^A-Za-z ]+" "123456789" "123456789"
+"c[^ie]t" "cat" "cat"
+"c[^ie]t" "cut" "cut"
+"c[^ie]t" "cit" ""
+
     Alternation
 "abc|def" "abc" "abc"
 "abc|def" "def" "def"

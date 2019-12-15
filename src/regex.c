@@ -51,6 +51,7 @@ typedef enum {
     S_LITERAL_CH,
     S_META_CH,
     S_CCLASS,
+    S_REVERSE_CCLASS,
 } StateType;
 
 typedef union StateData_ {
@@ -217,8 +218,14 @@ Fragment parse_pattern(char **pattern) {
                 return stack[0];
 
             case '[':
-                (*pattern) = create_character_class(++(*pattern), &data);
-                s = create_state(S_CCLASS, data, NULL, NULL);
+                if (*((*pattern) + 1) == '^') {
+                    (*pattern) += 2;
+                    (*pattern) = create_character_class(*pattern, &data);
+                    s = create_state(S_REVERSE_CCLASS, data, NULL, NULL);
+                } else {
+                    (*pattern) = create_character_class(++(*pattern), &data);
+                    s = create_state(S_CCLASS, data, NULL, NULL);
+                }
                 *fp++ = create_fragment(s, create_state_list(&s->next1));
 
                 // check if we should link this fragment with the one before it
@@ -353,6 +360,24 @@ char *perform_regex(State *start, char *string) {
         regex_log("State %p, ", (void *) s);
 
         switch (s->type) {
+            case S_REVERSE_CCLASS:
+                // If we get a match
+                if (!match_ch_str(*string, s->data.cclass) && *string != '\0') {
+                    regex_log("Reverse character class \"%s\" matched with character \"%c\" in string \n",
+                           s->data.cclass, *string);
+
+                    *sp++ = *string++;
+                    if (s->next2)
+                        *btp++ = create_backtrack_data(string, sp, s->next2);
+
+                    s = s->next1;
+                } else {
+                    regex_log("Reverse character class \"%s\" did not match with character \"%c\" in string \n",
+                           s->data.cclass, *string);
+                    do_backtrack = 1;
+                }
+                break;
+
             case S_CCLASS:
                 // If we get a match
                 if (match_ch_str(*string, s->data.cclass)) {
@@ -370,6 +395,7 @@ char *perform_regex(State *start, char *string) {
                     do_backtrack = 1;
                 }
                 break;
+
             case S_META_CH:
 
                 switch (s->data.meta) {
@@ -651,6 +677,7 @@ char *state_type_to_string(StateType type) {
         case S_LITERAL_CH: return "S_LITERAL_CH";
         case S_META_CH: return "S_META_CH";
         case S_CCLASS: return "S_CCLASS";
+        case S_REVERSE_CCLASS: return "S_REVERSE_CCLASS";
         default: return "Unhandled case in state_type_to_string";
     }
 }
