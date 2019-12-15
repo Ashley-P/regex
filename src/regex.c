@@ -603,8 +603,8 @@ StateList *append_lists(StateList *a, StateList *b) {
 
     rtn->n = a->n + b->n;
 
-    free(a);
-    free(b);
+   // free(a);
+   // free(b);
     return rtn;
 }
 
