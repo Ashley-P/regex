@@ -38,7 +38,7 @@
 "ab??" "ab" "a"
 "ab??" "a" "a"
 "ab??c" "ac" "ac"
-"ab??c" "ac" "ac"
+"ab??c" "abc" "abc"
 
     Character classes
 "gr[ae]y" "grey" "grey"

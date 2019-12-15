@@ -86,7 +86,7 @@ static int suppress_logging = 0;
 /***** Function Prototypes *****/
 char *regex(char *pattern, char *string, unsigned int options);
 char *pre_parse_pattern(char *pattern);
-Fragment parse_pattern(char *pattern);
+Fragment parse_pattern(char **pattern);
 char *perform_regex(State *start, char *string);
 
 int check_pattern_correctness(char *pattern);
@@ -131,7 +131,7 @@ char *regex(char *pattern, char *string, unsigned int options) {
         return "";
 
     char *new_pattern = pre_parse_pattern(pattern);
-    Fragment fsm = parse_pattern(new_pattern);
+    Fragment fsm = parse_pattern(&new_pattern);
     State *start = fsm.start;
 
     // Adding the final state to the final fsm
@@ -164,13 +164,15 @@ char *pre_parse_pattern(char *pattern) {
     return pattern;
 }
 
-Fragment parse_pattern(char *pattern) {
+Fragment parse_pattern(char **pattern) {
     regex_log("\n----- Parsing pattern -----\n");
     Fragment stack[MAX_STACK_SIZE];
     Fragment *fp = &stack[0]; // fragments pointer
     Fragment a, b;
 
-    char *sp = pattern;; // string pointer
+    //char *(*pattern) = *pattern; // string pointer
+
+    static int capturing_group = 0;
     
     StateData data;
     data.ch = '\0';
@@ -179,36 +181,49 @@ Fragment parse_pattern(char *pattern) {
 
     *fp++ = create_fragment(s, create_state_list(&s->next1));
 
-    while (*sp != '\0') {
-        switch (*sp) {
+    while (*(*pattern) != '\0') {
+        switch (*(*pattern)) {
+            case '(':
+                regex_log("Capturing group %d\n", ++capturing_group);
+                (*pattern)++; // Moving into the paren
+
+                *fp++ = parse_pattern(pattern);
+                link_fragments(fp, (*pattern)); // **pattern is '(' so we can check the next char
+
+                (*pattern)++; // Move past the ')'
+                break;
+
+            case ')':
+                return stack[0];
+
             case '[':
-                sp = create_character_class(++sp, &data);
+                (*pattern) = create_character_class(++(*pattern), &data);
                 s = create_state(S_CCLASS, data, NULL, NULL);
                 *fp++ = create_fragment(s, create_state_list(&s->next1));
 
                 // check if we should link this fragment with the one before it
-                fp = link_fragments(fp, sp);
+                fp = link_fragments(fp, (*pattern));
                 regex_log("State %p, Type = %s, range = %s\n",
                         (void *) s, state_type_to_string(s->type), s->data.cclass);
-                sp++;
+                (*pattern)++;
                 break;
 
             case '?':
                 a = *--fp;
                 data.ch = '\0';
 
-                s = (peek_ch(sp) == '?') ? create_state(S_NODE, data, NULL, a.start)
+                s = (peek_ch((*pattern)) == '?') ? create_state(S_NODE, data, NULL, a.start)
                                          : create_state(S_NODE, data, a.start, NULL);
 
                 //point_state_list(a.list, s);
 
-                *fp++ = (peek_ch(sp) == '?')
+                *fp++ = (peek_ch((*pattern)) == '?')
                           ? create_fragment(s, append_lists(a.list, create_state_list(&s->next1)))
                           : create_fragment(s, append_lists(a.list, create_state_list(&s->next2)));
 
-                sp += (peek_ch(sp) == '?') ? 1 : 0;
-                fp = link_fragments(fp, sp);
-                sp++;
+                (*pattern) += (peek_ch((*pattern)) == '?') ? 1 : 0;
+                fp = link_fragments(fp, (*pattern));
+                (*pattern)++;
                 regex_log("State %p, Node State\n", (void *) s);
                 break;
 
@@ -219,18 +234,18 @@ Fragment parse_pattern(char *pattern) {
                 // Since there are minor differences between the lazy and greedy versions
                 // We can just use the ternary operator and save some redundancy
                 // @NOTE : Don't chain ternary operators together
-                s = (peek_ch(sp) == '?') ? create_state(S_NODE, data, NULL, a.start)
+                s = (peek_ch((*pattern)) == '?') ? create_state(S_NODE, data, NULL, a.start)
                                          : create_state(S_NODE, data, a.start, NULL);
 
                 point_state_list(a.list, s);
 
-                *fp++ = (peek_ch(sp) == '?') ? create_fragment(s, create_state_list(&s->next1))
+                *fp++ = (peek_ch((*pattern)) == '?') ? create_fragment(s, create_state_list(&s->next1))
                                              : create_fragment(s, create_state_list(&s->next2));
 
 
-                sp += (peek_ch(sp) == '?') ? 1 : 0;
-                fp = link_fragments(fp, sp);
-                sp++;
+                (*pattern) += (peek_ch((*pattern)) == '?') ? 1 : 0;
+                fp = link_fragments(fp, (*pattern));
+                (*pattern)++;
                 regex_log("State %p, Node State\n", (void *) s);
 
                 break;
@@ -238,17 +253,17 @@ Fragment parse_pattern(char *pattern) {
                 a = *--fp;
                 data.ch = '\0';
 
-                s = (peek_ch(sp) == '?') ? create_state(S_NODE, data, NULL, a.start)
+                s = (peek_ch((*pattern)) == '?') ? create_state(S_NODE, data, NULL, a.start)
                                          : create_state(S_NODE, data, a.start, NULL);
 
                 point_state_list(a.list, s);
 
-                *fp++ = (peek_ch(sp) == '?') ? create_fragment(a.start, create_state_list(&s->next1))
+                *fp++ = (peek_ch((*pattern)) == '?') ? create_fragment(a.start, create_state_list(&s->next1))
                                              : create_fragment(a.start, create_state_list(&s->next2));
 
-                sp += (peek_ch(sp) == '?') ? 1 : 0;
-                fp = link_fragments(fp, sp);
-                sp++;
+                (*pattern) += (peek_ch((*pattern)) == '?') ? 1 : 0;
+                fp = link_fragments(fp, (*pattern));
+                (*pattern)++;
                 regex_log("State %p, Node State\n", (void *) s);
 
                 break;
@@ -258,22 +273,22 @@ Fragment parse_pattern(char *pattern) {
                 s = create_state(S_META_CH, data, NULL, NULL);
                 *fp++ = create_fragment(s, create_state_list(&s->next1));
 
-                fp = link_fragments(fp, sp);
+                fp = link_fragments(fp, (*pattern));
                 regex_log("State %p, Type = %s, ch = %c\n",
                         (void *) s, state_type_to_string(s->type), s->data.ch);
-                sp++;
+                (*pattern)++;
                 break;
 
             default: // Normal characters
-                data.ch = *sp;
+                data.ch = *(*pattern);
                 s = create_state(S_LITERAL_CH, data, NULL, NULL);
                 *fp++ = create_fragment(s, create_state_list(&s->next1));
 
                 // check if we should link this fragment with the one before it
-                fp = link_fragments(fp, sp);
+                fp = link_fragments(fp, (*pattern));
                 regex_log("State %p, Type = %s, ch = %c\n",
                         (void *) s, state_type_to_string(s->type), s->data.ch);
-                sp++;
+                (*pattern)++;
                 break;
         }
     }
