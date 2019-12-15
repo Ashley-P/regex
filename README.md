@@ -14,3 +14,4 @@ Implemented features:
  - '[^a-z]' Reverse character classes including ranges
  - '()' Capturing groups (No backreferencing though)
  - '|' Alternation
+ - '^' Start of string
