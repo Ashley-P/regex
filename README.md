@@ -11,3 +11,5 @@ Implemented features:
  - '\*' Greedy quantifier (0 or more)
  - '\*?' Lazy quantifier (0 or more)
  - '[a-z]' Character classes including ranges
+ - '()' Capturing groups (No backreferencing though)
+ - '|' Alternation

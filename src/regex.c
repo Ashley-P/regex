@@ -3,7 +3,18 @@
  * Matching literal characters
  * 
  * Metacharacters:
- * . (Any char) 
+ * - '.'  (Any character except '\0')
+ * - '+'  Greedy quantifier (1 or more)
+ * - '+?' Lazy quantifier (1 or more)
+ * - '?'  Greedy quantifier (0 or 1)
+ * - '??' Lazy quantifier (0 or 1)
+ * - '\*' Greedy quantifier (0 or more)
+ * - '\*?' Lazy quantifier (0 or more)
+ * - '|' Alternation
+ * 
+ * Other stuff:
+ * - '[a-z]' Character classes including ranges
+ * - '()' Capturing groups (No backreferencing though)
  */
 
 
@@ -167,8 +178,15 @@ char *pre_parse_pattern(char *pattern) {
 Fragment parse_pattern(char **pattern) {
     regex_log("\n----- Parsing pattern -----\n");
     Fragment stack[MAX_STACK_SIZE];
+
+    // For debugging
+#if 1
+    for (int i = 0; i < MAX_STACK_SIZE; i++)
+        stack[i] = create_fragment(NULL, NULL);
+#endif
+    
     Fragment *fp = &stack[0]; // fragments pointer
-    Fragment a, b;
+    Fragment volatile a, b; // These get optimized out and it breaks alternation
 
     //char *(*pattern) = *pattern; // string pointer
 
@@ -177,20 +195,22 @@ Fragment parse_pattern(char **pattern) {
     StateData data;
     data.ch = '\0';
     State *s = create_state(S_NODE, data, NULL, NULL);
-    // a start start for the entire fragment stack
+    regex_log("Start of parse_pattern: State %p, Node State\n", (void *) s);
+    // a start for the entire fragment stack
 
     *fp++ = create_fragment(s, create_state_list(&s->next1));
 
     while (*(*pattern) != '\0') {
         switch (*(*pattern)) {
             case '(':
-                regex_log("Capturing group %d\n", ++capturing_group);
+                regex_log("\nCapturing group %d\n", ++capturing_group);
                 (*pattern)++; // Moving into the paren
 
                 *fp++ = parse_pattern(pattern);
-                link_fragments(fp, (*pattern)); // **pattern is '(' so we can check the next char
+                fp = link_fragments(fp, (*pattern)); // **pattern is ')' so we can check the next char
 
                 (*pattern)++; // Move past the ')'
+                regex_log("\nEnd of Capturing group %d\n\n", capturing_group);
                 break;
 
             case ')':
@@ -206,6 +226,19 @@ Fragment parse_pattern(char **pattern) {
                 regex_log("State %p, Type = %s, range = %s\n",
                         (void *) s, state_type_to_string(s->type), s->data.cclass);
                 (*pattern)++;
+                break;
+
+            case '|':
+                a = *--fp;
+                (*pattern)++; // moving past '|'
+                regex_log("\nAlternating\n");
+                b = parse_pattern(pattern);
+
+                data.ch = '\0';
+                s = create_state(S_NODE, data, a.start, b.start);
+                *fp++ = create_fragment(s, append_lists(a.list, b.list));
+                fp = link_fragments(fp, (*pattern) - 1);
+                regex_log("Alternation: State %p, Node State\n", (void *) s);
                 break;
 
             case '?':
@@ -224,7 +257,7 @@ Fragment parse_pattern(char **pattern) {
                 (*pattern) += (peek_ch((*pattern)) == '?') ? 1 : 0;
                 fp = link_fragments(fp, (*pattern));
                 (*pattern)++;
-                regex_log("State %p, Node State\n", (void *) s);
+                regex_log("0 Or 1: State %p, Node State\n", (void *) s);
                 break;
 
             case '*':
@@ -246,7 +279,7 @@ Fragment parse_pattern(char **pattern) {
                 (*pattern) += (peek_ch((*pattern)) == '?') ? 1 : 0;
                 fp = link_fragments(fp, (*pattern));
                 (*pattern)++;
-                regex_log("State %p, Node State\n", (void *) s);
+                regex_log("0 Or More: State %p, Node State\n", (void *) s);
 
                 break;
             case '+':
@@ -264,7 +297,7 @@ Fragment parse_pattern(char **pattern) {
                 (*pattern) += (peek_ch((*pattern)) == '?') ? 1 : 0;
                 fp = link_fragments(fp, (*pattern));
                 (*pattern)++;
-                regex_log("State %p, Node State\n", (void *) s);
+                regex_log("1 Or More: State %p, Node State\n", (void *) s);
 
                 break;
 

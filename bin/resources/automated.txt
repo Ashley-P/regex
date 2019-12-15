@@ -48,6 +48,14 @@
 "[A-Za-z ]+" "Anything I like" "Anything I like"
 "[0-9]+" "1234567890" "1234567890"
 
+    Alternation
+"abc|def" "abc" "abc"
+"abc|def" "def" "def"
+"(abc|def)+" "abcdefdefabc" "abcdefdefabc"
+"(abc|def)ghi" "abcghi" "abcghi"
+"abc|def|ghi" "abc" "abc"
+"I like (cat|dog)s very much" "I like dogs very much" "I like dogs very much"
+
     Slightly more complex (involving capturing groups)
 "(one ?(two)? ?)+" "one two one one two two" "one two one one two "
 "Feb(ruary)? [0-9][0-9](nd)?" "Feb 22" "Feb 22"
