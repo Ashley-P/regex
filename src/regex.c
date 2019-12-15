@@ -88,8 +88,13 @@ typedef struct BacktrackData_ {
 } BacktrackData;
 
 
+typedef struct Options_ {
+    unsigned int suppress_logging : 1;
+    unsigned int start_of_string  : 1; // When the '^' is used at the start of the string
+} Options;
+
 /***** Constants *****/
-static int suppress_logging = 0;
+static Options options;
 
 
 
@@ -121,18 +126,23 @@ BacktrackData create_backtrack_data(char *string, char *sp, State *s);
 char *state_type_to_string(StateType type);
 char *meta_ch_type_to_string(MetaChType type);
 
+void handle_options(unsigned int opts);
+
+
 // String stuff
 int match_ch_str(char ch, char *str);
 static inline char peek_ch(char *str);
+static inline char reverse_peek_ch(char *str);
 
 void pattern_error(char *p, unsigned int pos, unsigned int range, char *msg, ...);
 void regex_log(char *msg, ...);
 
 
 
-char *regex(char *pattern, char *string, unsigned int options) {
+char *regex(char *pattern, char *string, unsigned int opts) {
     // Handle options - should be moved to it's own function
-    if (options & REGEX_SUPPRESS_LOGGING) suppress_logging = 1;
+    //if (options & REGEX_SUPPRESS_LOGGING) suppress_logging = 1;
+    handle_options(opts);
 
     // Echoing back for no real reason
     regex_log("Pattern : \"%s\"\n", pattern);
@@ -152,15 +162,23 @@ char *regex(char *pattern, char *string, unsigned int options) {
     point_state_list(fsm.list, final);
     regex_log("\nFinal State %p, Node State\n", (void *) final);
 
-    // Do the regex at each point of the string
     char *return_str = "";
-    for (int i = 0; *(string + i) != '\0'; i++) {
-        regex_log("\n\nRegex Iteration %d\n", i + 1);
-        return_str = perform_regex(start, string + i);
-        if (*return_str != '\0')
-            break;
-        else
-            regex_log("\nIteration %d failed\n\n", i + 1);
+
+    if (options.start_of_string) {
+        regex_log("\n\nStart of string only\n");
+        regex_log("Regex Iteration 1\n");
+        return_str = perform_regex(start, string);
+
+    } else {
+        // Do the regex at each point of the string
+        for (int i = 0; *(string + i) != '\0'; i++) {
+            regex_log("\n\nRegex Iteration %d\n", i + 1);
+            return_str = perform_regex(start, string + i);
+            if (*return_str != '\0')
+                break;
+            else
+                regex_log("\nIteration %d failed\n\n", i + 1);
+        }
     }
 
     if (*return_str == '\0')
@@ -189,6 +207,7 @@ Fragment parse_pattern(char **pattern) {
     Fragment *fp = &stack[0]; // fragments pointer
     Fragment volatile a, b; // These get optimized out and it breaks alternation
 
+    //const char *str_start = *pattern;
     //char *(*pattern) = *pattern; // string pointer
 
     static int capturing_group = 0;
@@ -203,6 +222,11 @@ Fragment parse_pattern(char **pattern) {
 
     while (*(*pattern) != '\0') {
         switch (*(*pattern)) {
+            case '^':
+                options.start_of_string = (char) 1;
+                (*pattern)++;
+                break;
+
             case '(':
                 regex_log("\nCapturing group %d\n", ++capturing_group);
                 (*pattern)++; // Moving into the paren
@@ -704,6 +728,10 @@ static inline char peek_ch(char *str) {
     return *(str+1);
 }
 
+static inline char reverse_peek_ch(char *str) {
+    return *(str-1);
+}
+
 // Allows nice printing showing where the error is in the pattern
 void pattern_error(char *p, unsigned int pos, unsigned int range, char *msg, ...) {
     static char error_msg[] = "Error in pattern -> ";
@@ -731,10 +759,16 @@ void pattern_error(char *p, unsigned int pos, unsigned int range, char *msg, ...
 
 // Let's us easily suppress printing to the screen probably temporary
 void regex_log(char *msg, ...) {
-    if (suppress_logging) return;
+    if (options.suppress_logging) return;
 
     va_list args;
     va_start(args, msg);
     vprintf(msg, args);
     va_end(args);
+}
+
+// Some options can be handled as soon as we enter the function
+void handle_options(unsigned int opts) {
+    options.suppress_logging = (opts & REGEX_SUPPRESS_LOGGING) ? 1 : 0;
+    options.start_of_string = 0;
 }

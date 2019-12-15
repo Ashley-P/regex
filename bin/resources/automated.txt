@@ -62,6 +62,10 @@
 "abc|def|ghi" "abc" "abc"
 "I like (cat|dog)s very much" "I like dogs very much" "I like dogs very much"
 
+    Misc
+"^abc" "abc" "abc"
+"^abc" "aabc" ""
+
     Slightly more complex (involving capturing groups)
 "(one ?(two)? ?)+" "one two one one two two" "one two one one two "
 "Feb(ruary)? [0-9][0-9](nd)?" "Feb 22" "Feb 22"
