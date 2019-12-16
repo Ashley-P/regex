@@ -101,7 +101,7 @@ static Options options;
 
 
 /***** Function Prototypes *****/
-char *regex(char *pattern, char *string, unsigned int options);
+char *regex(char *pattern, char *string, unsigned int opts);
 char *pre_parse_pattern(char *pattern);
 Fragment parse_pattern(char **pattern);
 char *perform_regex(State *start, char *string);
@@ -119,7 +119,9 @@ Fragment create_fragment(State *s, StateList *l);
 void point_state_list(StateList *l, State *a);
 StateList *create_state_list(State **first);
 StateList *append_lists(StateList *a, StateList *b);
+
 char *create_character_class(char *sp, StateData *data);
+State *parse_escapes(char **p);
 
 BacktrackData create_backtrack_data(char *string, char *sp, State *s);
 
@@ -222,8 +224,19 @@ Fragment parse_pattern(char **pattern) {
 
     while (*(*pattern) != '\0') {
         switch (*(*pattern)) {
+            case '\\': // Escaped characters
+                s = parse_escapes(pattern);
+                *fp++ = create_fragment(s, create_state_list(&s->next1));
+
+                // check if we should link this fragment with the one before it
+                fp = link_fragments(fp, (*pattern));
+                //regex_log("State %p, Type = %s, ch = %c\n",
+                        //(void *) s, state_type_to_string(s->type), s->data.ch);
+                (*pattern)++;
+                break;
+
             case '^':
-                options.start_of_string = (char) 1;
+                options.start_of_string = 1;
                 (*pattern)++;
                 break;
 
@@ -683,6 +696,55 @@ char *create_character_class(char *sp, StateData *data) {
     return sp;
 }
 
+State *parse_escapes(char **p) {
+    State *s;
+    StateData data;
+
+    switch (peek_ch(*p)) {
+        case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9': 
+            regex_log("\nBack references are not implemented yet: ");
+            if (peek_ch((*p) + 1) > '0' && peek_ch((*p) + 1) < '9') { // We accept back refs upto 99
+                regex_log("ref no. %c%c", peek_ch(*p), peek_ch((*p) + 1));
+                *p = (*p) + 2;
+            } else {
+                regex_log("ref no. %c", peek_ch(*p));
+                *p = (*p) + 1;
+            }
+
+            data.ch = '\0';
+            s = create_state(S_NODE, data, NULL, NULL);
+            regex_log("Back reference: State %p, Node State\n", (void *) s);
+            break;
+
+        case 'W': // NOT any alphanumeric char and underscore aka [^A-Za-z0-9_]
+            create_character_class("A-Za-z0-9_]", &data);
+            s = create_state(S_REVERSE_CCLASS, data, NULL, NULL);
+            regex_log("Shorthand \"\\W\" (NOT any alphanum + underscore) Parsed\n");
+            regex_log("State %p, Type = %s, range = %s\n",
+                    (void *) s, state_type_to_string(s->type), s->data.cclass);
+            (*p)++;
+            break;
+
+        case 'w': // Any alphanumeric char and underscore aka [A-Za-z0-9_]
+            create_character_class("A-Za-z0-9_]", &data);
+            s = create_state(S_CCLASS, data, NULL, NULL);
+            regex_log("Shorthand \"\\w\" (any alphanum + underscore) Parsed\n");
+            regex_log("State %p, Type = %s, range = %s\n",
+                    (void *) s, state_type_to_string(s->type), s->data.cclass);
+            (*p)++;
+            break;
+
+        default: // Anything not specially handled gets returned as a literal character
+            data.ch = peek_ch(*p);
+            s = create_state(S_LITERAL_CH, data, NULL, NULL);
+            regex_log("State %p, Type = %s, ch = %c\n",
+                    (void *) s, state_type_to_string(s->type), s->data.ch);
+            (*p)++;
+            break;
+    }
+
+    return s;
+}
 
 
 BacktrackData create_backtrack_data(char *string, char *sp, State *s) {
