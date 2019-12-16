@@ -779,7 +779,20 @@ State *parse_escapes(char **p) {
             (*p)++;
             break;
 
-        default: // Anything not specially handled gets returned as a literal character
+        case 'A':
+            regex_log("\\A (beginning of string) not implemented yet");
+            goto def;
+
+        case 'z': case 'Z':
+            regex_log("End of string not implemented yet\n");
+            goto def;
+
+        case 'b': case 'B':
+            regex_log("Word boundaries not implemented yet\n");
+            goto def;
+
+        default:
+        def:// Anything not specially handled gets returned as a literal character
             data.ch = peek_ch(*p);
             s = create_state(S_LITERAL_CH, data, NULL, NULL);
             regex_log("State %p, Type = %s, ch = %c\n",
