@@ -743,6 +743,24 @@ State *parse_escapes(char **p) {
             (*p)++;
             break;
 
+        case 'D': // NOT any digit aka [0-9]
+            create_character_class("0-9]", &data);
+            s = create_state(S_REVERSE_CCLASS, data, NULL, NULL);
+            regex_log("Shorthand \"\\D\" (NOT any digit) Parsed\n");
+            regex_log("State %p, Type = %s, range = %s\n",
+                    (void *) s, state_type_to_string(s->type), s->data.cclass);
+            (*p)++;
+            break;
+
+        case 'd': // Any digit aka [0-9]
+            create_character_class("0-9]", &data);
+            s = create_state(S_CCLASS, data, NULL, NULL);
+            regex_log("Shorthand \"\\d\" (any digit) Parsed\n");
+            regex_log("State %p, Type = %s, range = %s\n",
+                    (void *) s, state_type_to_string(s->type), s->data.cclass);
+            (*p)++;
+            break;
+
         case 'W': // NOT any alphanumeric char and underscore aka [^A-Za-z0-9_]
             create_character_class("A-Za-z0-9_]", &data);
             s = create_state(S_REVERSE_CCLASS, data, NULL, NULL);

@@ -66,6 +66,7 @@
 "^abc" "abc" "abc"
 "^abc" "aabc" ""
 "a\tb" "a	b" "a	b"
+"\d\d/\d\d/\d\d\d\d" "01/01/1970" "01/01/1970"
 
     Slightly more complex (involving capturing groups)
 "(one ?(two)? ?)+" "one two one one two two" "one two one one two "
