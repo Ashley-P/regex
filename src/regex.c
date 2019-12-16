@@ -716,6 +716,33 @@ State *parse_escapes(char **p) {
             regex_log("Back reference: State %p, Node State\n", (void *) s);
             break;
 
+        // White space
+        case 'n': case 't': case 'r':
+            data.ch = peek_ch(*p) == 'n' ? '\n' : peek_ch(*p) == 't' ? '\t' : '\r';
+            s = create_state(S_LITERAL_CH, data, NULL, NULL);
+            regex_log("State %p, Type = %s, ch = %c\n",
+                    (void *) s, state_type_to_string(s->type), s->data.ch);
+            (*p)++;
+            break;
+            
+        case 'S':
+            create_character_class("\n\t\r ]", &data);
+            s = create_state(S_REVERSE_CCLASS, data, NULL, NULL);
+            regex_log("Shorthand \"\\s\" (NOT any whitespace character) Parsed\n");
+            regex_log("State %p, Type = %s, range = %s\n",
+                    (void *) s, state_type_to_string(s->type), s->data.cclass);
+            (*p)++;
+            break;
+
+        case 's':
+            create_character_class("\n\t\r ]", &data);
+            s = create_state(S_CCLASS, data, NULL, NULL);
+            regex_log("Shorthand \"\\s\" (Any whitespace character) Parsed\n");
+            regex_log("State %p, Type = %s, range = %s\n",
+                    (void *) s, state_type_to_string(s->type), s->data.cclass);
+            (*p)++;
+            break;
+
         case 'W': // NOT any alphanumeric char and underscore aka [^A-Za-z0-9_]
             create_character_class("A-Za-z0-9_]", &data);
             s = create_state(S_REVERSE_CCLASS, data, NULL, NULL);

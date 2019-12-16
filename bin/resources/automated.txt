@@ -65,6 +65,7 @@
     Misc
 "^abc" "abc" "abc"
 "^abc" "aabc" ""
+"a\tb" "a	b" "a	b"
 
     Slightly more complex (involving capturing groups)
 "(one ?(two)? ?)+" "one two one one two two" "one two one one two "
