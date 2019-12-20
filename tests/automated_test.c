@@ -4,7 +4,7 @@
 #include <string.h>
 #include "regex.h"
 
-#define TEST_MAX_STRING_SIZE 1000
+#define TEST_MAX_STRING_SIZE 100
 
 // This file incldues some automated tests
 static int test_num = 1;
@@ -79,8 +79,10 @@ int run_test(char *pattern, char *string, char *match) {
     str = regex(pattern, string, REGEX_SUPPRESS_LOGGING);
     printf("%s -> %s\n\n", pattern, str);
     if (!strcmp(str, match)) {
+        free(str);
         return 1;
     } else {
+        free(str);
         return 0;
     }
 

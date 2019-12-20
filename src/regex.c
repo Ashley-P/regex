@@ -31,6 +31,7 @@
 /***** Defines *****/
 #define MAX_STACK_SIZE 64
 #define MAX_STRING_SIZE 256
+#define MAX_CAPTURE_GROUPS 100 // It's actually 99 but it's easier than putting + 1 everywhere
 
 
 /***** Datatypes *****/
@@ -58,6 +59,7 @@ typedef union StateData_ {
     char ch; // for literal characters
     MetaChType meta; // Meta character types
     char *cclass;
+    char cg; // capture group number - negative number means we are leaving the group
 } StateData;
 
 typedef struct State_ {
@@ -81,10 +83,22 @@ typedef struct Fragment_ {
     struct StateList_ *list;
 } Fragment;
 
+typedef struct CaptureGroupData_ {
+    int icg[MAX_CAPTURE_GROUPS];
+    int str_ptrs[MAX_CAPTURE_GROUPS];
+    char cgs[MAX_CAPTURE_GROUPS][MAX_STRING_SIZE];
+} CaptureGroupData;
+
 typedef struct BacktrackData_ {
     char *string;
     char *sp;
     State *s;
+
+    // We also gotta keep track of where the capturing groups are upto
+    //int icg[MAX_CAPTURE_GROUPS];
+    //int str_ptrs[MAX_CAPTURE_GROUPS];
+    //char cgs[MAX_CAPTURE_GROUPS][MAX_STRING_SIZE];
+    struct CaptureGroupData_ *cgd;
 } BacktrackData;
 
 
@@ -96,6 +110,9 @@ typedef struct Options_ {
 /***** Constants *****/
 static Options options;
 
+// used in parse_pattern to keep track of capturing groups. Only used for printing
+static int capturing_group = 0;
+
 
 
 
@@ -105,6 +122,7 @@ char *regex(char *pattern, char *string, unsigned int opts);
 char *pre_parse_pattern(char *pattern);
 Fragment parse_pattern(char **pattern);
 char *perform_regex(State *start, char *string);
+void capture_group_str_grab(CaptureGroupData *cgd, char ch);
 
 int check_pattern_correctness(char *pattern);
 int state_altering_check(char *p);
@@ -123,7 +141,7 @@ StateList *append_lists(StateList *a, StateList *b);
 char *create_character_class(char *sp, StateData *data);
 State *parse_escapes(char **p);
 
-BacktrackData create_backtrack_data(char *string, char *sp, State *s);
+BacktrackData create_backtrack_data(char *string, char *sp, State *s, CaptureGroupData *cgd);
 
 char *state_type_to_string(StateType type);
 char *meta_ch_type_to_string(MetaChType type);
@@ -187,6 +205,10 @@ char *regex(char *pattern, char *string, unsigned int opts) {
         regex_log("Regex Failed\n");
     else
         regex_log("Returned string : %s\n\n", return_str);
+
+    // Cleanup
+    capturing_group = 0;
+
     return return_str;
 }
 
@@ -198,6 +220,7 @@ char *pre_parse_pattern(char *pattern) {
 
 Fragment parse_pattern(char **pattern) {
     regex_log("\n----- Parsing pattern -----\n");
+    //Fragment *stack = malloc(sizeof(Fragment) * MAX_STACK_SIZE);
     Fragment stack[MAX_STACK_SIZE];
 
     // For debugging
@@ -208,14 +231,15 @@ Fragment parse_pattern(char **pattern) {
     
     Fragment *fp = &stack[0]; // fragments pointer
     Fragment volatile a, b; // These get optimized out and it breaks alternation
+    int cap_group_tmp; // For use when we get '('
 
     //const char *str_start = *pattern;
     //char *(*pattern) = *pattern; // string pointer
 
-    static int capturing_group = 0;
-    
+    // Creating the first state
+    // If we are in a capturing group, we change the data
     StateData data;
-    data.ch = '\0';
+    data.cg = capturing_group;
     State *s = create_state(S_NODE, data, NULL, NULL);
     regex_log("Start of parse_pattern: State %p, Node State\n", (void *) s);
     // a start for the entire fragment stack
@@ -242,9 +266,15 @@ Fragment parse_pattern(char **pattern) {
 
             case '(':
                 regex_log("\nCapturing group %d\n", ++capturing_group);
+                cap_group_tmp = capturing_group;
                 (*pattern)++; // Moving into the paren
 
-                *fp++ = parse_pattern(pattern);
+                a = parse_pattern(pattern); // Collect everything inside the parentheses
+                data.cg = 0 - cap_group_tmp; // negating the number to show we are leaving the group
+                s = create_state(S_NODE, data, NULL, NULL);
+                point_state_list(a.list, s);
+                *fp++ = create_fragment(a.start, create_state_list(&s->next1));
+                
                 fp = link_fragments(fp, (*pattern)); // **pattern is ')' so we can check the next char
 
                 (*pattern)++; // Move past the ')'
@@ -252,7 +282,7 @@ Fragment parse_pattern(char **pattern) {
                 break;
 
             case ')':
-                return stack[0];
+                return *stack;
 
             case '[':
                 if (*((*pattern) + 1) == '^') {
@@ -378,20 +408,34 @@ Fragment parse_pattern(char **pattern) {
 char *perform_regex(State *start, char *string) {
     regex_log("\n----- Navigating Finite State Machine -----\n");
 
-    BacktrackData backtrack_stack[MAX_STACK_SIZE];
+    // Backtracking related
+    BacktrackData *backtrack_stack = malloc(sizeof(BacktrackData) * MAX_STACK_SIZE);
+    //BacktrackData backtrack_stack[MAX_STACK_SIZE];
     BacktrackData *btp = backtrack_stack;
     BacktrackData b;
     int do_backtrack = 0;
+
+    // Capturing group related - This is the worst and only way I can imagine doing this
+    // We capture upto 99 groups used to check whether we should be collecting
+    CaptureGroupData *cgd = malloc(sizeof(CaptureGroupData));
+    //int in_capture_group[MAX_CAPTURE_GROUPS];
+    //int str_ptrs[MAX_CAPTURE_GROUPS]; // Used to insert the characters 
+    //char cg_string[MAX_CAPTURE_GROUPS][MAX_STRING_SIZE]; // The string captured by the group
+
+
+    for (int i = 0; i < MAX_CAPTURE_GROUPS; i++) {
+        cgd->icg[i] = 0;
+        cgd->str_ptrs[i] = 0;
+        cgd->cgs[i][0] = '\0';
+        //in_capture_group[i] = 0; // Making sure the values are at default
+        //str_ptrs[i] = 0;
+        //cg_string[i][0] = '\0'; // Good drills
+    }
 
     // State *s = start->next1; // This is the state we are checking
     State *s = start;
     char *rtn_str = malloc(sizeof(char) * MAX_STRING_SIZE);
     char *sp = rtn_str;
-#if 0
-    if (start->next2)
-        *btp++ = create_backtrack_data(string, sp, start->next2);
-#endif
-
 
     while (1) {
         regex_log("State %p, ", (void *) s);
@@ -405,7 +449,7 @@ char *perform_regex(State *start, char *string) {
 
                     *sp++ = *string++;
                     if (s->next2)
-                        *btp++ = create_backtrack_data(string, sp, s->next2);
+                        *btp++ = create_backtrack_data(string, sp, s->next2, cgd);
 
                     s = s->next1;
                 } else {
@@ -423,7 +467,7 @@ char *perform_regex(State *start, char *string) {
 
                     *sp++ = *string++;
                     if (s->next2)
-                        *btp++ = create_backtrack_data(string, sp, s->next2);
+                        *btp++ = create_backtrack_data(string, sp, s->next2, cgd);
 
                     s = s->next1;
                 } else {
@@ -443,7 +487,7 @@ char *perform_regex(State *start, char *string) {
 
                             *sp++ = *string++;
                             if (s->next2)
-                                *btp++ = create_backtrack_data(string, sp, s->next2);
+                                *btp++ = create_backtrack_data(string, sp, s->next2, cgd);
 
                             s = s->next1;
                         } else {
@@ -463,9 +507,10 @@ char *perform_regex(State *start, char *string) {
                     regex_log("Literal character \"%c\" matched character \"%c\" in string\n",
                             s->data.ch, *string);
 
+                    capture_group_str_grab(cgd, *string);
                     *sp++ = *string++;
                     if (s->next2)
-                        *btp++ = create_backtrack_data(string, sp, s->next2);
+                        *btp++ = create_backtrack_data(string, sp, s->next2, cgd);
                     s = s->next1;
                 } else {
                     // Backtracking would happen here
@@ -477,14 +522,30 @@ char *perform_regex(State *start, char *string) {
 
             // Specials
             case S_FINAL:
-                regex_log("Match completed!\n");
+                regex_log("Match completed!\n\n");
+
+                // Printing out the capturing groups for debugging
+                for (int i = 0; i < 9; i++)
+                    regex_log("capture_group %d - %s -\n", i+1, cgd->cgs[i]);
+                regex_log("\n");
                 *sp++ = '\0';
+                // Cleanup
+                //free(backtrack_stack);
                 return rtn_str;
             
             case S_NODE:
-                regex_log("Node State, next1 = %p, next2 = %p\n", (void *) s->next1, (void *) s->next2);
+                if (s->data.cg > 0) {
+                    // We only collect once, so "(abc)+" shouldn't result in "abcabc" etc for the capture string
+                    if (cgd->icg[s->data.cg - 1] == 0)
+                        cgd->icg[s->data.cg - 1] = 1;
+                } else if (s->data.cg < 0)
+                    // 2 let's us know that we've already been here
+                    cgd->icg[(s->data.cg * (-1)) - 1] = 2;
+
+                regex_log("Node State, cg = %d, next1 = %p, next2 = %p\n",
+                    s->data.cg, (void *) s->next1, (void *) s->next2);
                 if (s->next2)
-                    *btp++ = create_backtrack_data(string, sp, s->next2);
+                    *btp++ = create_backtrack_data(string, sp, s->next2, cgd);
                 s = s->next1;
                 break;
             default:
@@ -499,15 +560,33 @@ char *perform_regex(State *start, char *string) {
                 regex_log("Stack empty, unable to backtrack\n");
                 return "";
             } else {
+                // Replacing relevant data
                 b = *--btp;
                 string = b.string;
                 sp = b.sp;
                 s = b.s;
+                free(cgd);
+                *cgd = *b.cgd;
+                //memcpy(in_capture_group, b.icg, sizeof(int) * MAX_CAPTURE_GROUPS);
+                //memcpy(str_ptrs, b.str_ptrs, sizeof(int) * MAX_CAPTURE_GROUPS);
+                //memcpy(cg_string, b.cgs, sizeof(char) * MAX_CAPTURE_GROUPS * MAX_STRING_SIZE);
+
                 regex_log("Backtrack complete: Starting at state %p\n\n", (void *) s);
                 do_backtrack = 0;
             }
         }
     } // While
+}
+
+// Collects strings inside relevant capture groups
+void capture_group_str_grab(CaptureGroupData *cgd, char ch) {
+
+    for (int i = 0; i < MAX_CAPTURE_GROUPS; i++) {
+        if (cgd->icg[i] == 1) {
+            cgd->cgs[i][cgd->str_ptrs[i]++] = ch;
+            cgd->cgs[i][cgd->str_ptrs[i]] = '\0';
+        }
+    }
 }
 
 
@@ -805,12 +884,17 @@ State *parse_escapes(char **p) {
 }
 
 
-BacktrackData create_backtrack_data(char *string, char *sp, State *s) {
+BacktrackData create_backtrack_data(char *string, char *sp, State *s, CaptureGroupData *cgd) {
     BacktrackData rtn;
     rtn.string = string;
     rtn.sp = sp;
     rtn.s = s;
 
+    rtn.cgd = malloc(sizeof(CaptureGroupData));
+    *rtn.cgd = *cgd;
+   // memcpy(rtn.icg, icg, sizeof(int) * MAX_CAPTURE_GROUPS);
+   // memcpy(rtn.str_ptrs, str_ptrs, sizeof(int) * MAX_CAPTURE_GROUPS);
+   // memcpy(rtn.cgs, cgs, sizeof(char) * MAX_CAPTURE_GROUPS * MAX_STRING_SIZE);
     return rtn;
 }
 
