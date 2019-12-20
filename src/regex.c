@@ -113,6 +113,9 @@ static Options options;
 // used in parse_pattern to keep track of capturing groups. Only used for printing
 static int capturing_group = 0;
 
+// ezpz way to free stuff
+static void **regex_free;
+static void **rfp; // regex_free pointer
 
 
 
@@ -163,6 +166,8 @@ char *regex(char *pattern, char *string, unsigned int opts) {
     // Handle options - should be moved to it's own function
     //if (options & REGEX_SUPPRESS_LOGGING) suppress_logging = 1;
     handle_options(opts);
+    regex_free = malloc(sizeof(void *) * MAX_STACK_SIZE * 10);
+    rfp = regex_free;
 
     // Echoing back for no real reason
     regex_log("Pattern : \"%s\"\n", pattern);
@@ -208,6 +213,11 @@ char *regex(char *pattern, char *string, unsigned int opts) {
 
     // Cleanup
     capturing_group = 0;
+
+    while (rfp != regex_free) {
+        free(*--rfp);
+    }
+    free(regex_free);
 
     return return_str;
 }
@@ -434,7 +444,7 @@ char *perform_regex(State *start, char *string) {
 
     // State *s = start->next1; // This is the state we are checking
     State *s = start;
-    char *rtn_str = malloc(sizeof(char) * MAX_STRING_SIZE);
+    char *rtn_str = malloc(sizeof(char) * MAX_STRING_SIZE); // This get's free by the caller of regex()
     char *sp = rtn_str;
 
     while (1) {
@@ -529,8 +539,10 @@ char *perform_regex(State *start, char *string) {
                     regex_log("capture_group %d - %s -\n", i+1, cgd->cgs[i]);
                 regex_log("\n");
                 *sp++ = '\0';
+
                 // Cleanup
                 //free(backtrack_stack);
+                //free(cgd);
                 return rtn_str;
             
             case S_NODE:
@@ -565,7 +577,7 @@ char *perform_regex(State *start, char *string) {
                 string = b.string;
                 sp = b.sp;
                 s = b.s;
-                free(cgd);
+                //free(cgd);
                 *cgd = *b.cgd;
                 //memcpy(in_capture_group, b.icg, sizeof(int) * MAX_CAPTURE_GROUPS);
                 //memcpy(str_ptrs, b.str_ptrs, sizeof(int) * MAX_CAPTURE_GROUPS);
@@ -703,6 +715,7 @@ Fragment *link_fragments(Fragment *fp, char *sp) {
 
 State *create_state(StateType type, StateData data, State * const next1, State * const next2) {
     State *a = malloc(sizeof(State));
+    *rfp++ = a;
     a->type  = type;
     a->data  = data;
     a->next1 = next1;
@@ -727,6 +740,7 @@ void point_state_list(StateList *l, State *a) {
 
 StateList *create_state_list(State **first) {
     StateList *l = malloc(sizeof(StateList));
+    *rfp++ = l;
     l->n = 0;
     l->l[l->n++] = first;
 
@@ -735,6 +749,7 @@ StateList *create_state_list(State **first) {
 
 StateList *append_lists(StateList *a, StateList *b) {
     StateList *rtn = malloc(sizeof(StateList));
+    *rfp++ = rtn;
     rtn->n = 0;
 
     for (int i = 0; i < a->n; i++)
@@ -745,14 +760,13 @@ StateList *append_lists(StateList *a, StateList *b) {
 
     rtn->n = a->n + b->n;
 
-   // free(a);
-   // free(b);
     return rtn;
 }
 
 
 char *create_character_class(char *sp, StateData *data) {
     data->cclass = malloc(sizeof(char) * MAX_STRING_SIZE);
+    //*rfp++ = data->cclass;
     char *cp = &data->cclass[0];
     // @TODO: We don't look for backwards slashes right now
 
@@ -891,6 +905,7 @@ BacktrackData create_backtrack_data(char *string, char *sp, State *s, CaptureGro
     rtn.s = s;
 
     rtn.cgd = malloc(sizeof(CaptureGroupData));
+    *rfp++ = rtn.cgd;
     *rtn.cgd = *cgd;
    // memcpy(rtn.icg, icg, sizeof(int) * MAX_CAPTURE_GROUPS);
    // memcpy(rtn.str_ptrs, str_ptrs, sizeof(int) * MAX_CAPTURE_GROUPS);

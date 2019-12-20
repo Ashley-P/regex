@@ -106,6 +106,7 @@ int parse_line(FILE *f, char *p, char *s, char *m) {
         c++;
     }
     if (*c == EOF) return 0;
+    *c++ = '\0';
 
     c = str;
 

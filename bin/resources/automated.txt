@@ -1,4 +1,5 @@
     Basic Matching
+
 "abc" "abc" "abc"
 "abc" "aaaaabc" "abc"
 "abc" "def" ""
@@ -6,6 +7,7 @@
 "abc" "def" ""
 
     Matching . character
+
 "p.t" "pat" "pat"
 "p.t" "pet" "pet"
 "p.t" "pit" "pit"
@@ -14,6 +16,7 @@
 "..." "abc" "abc"
 
     + quantifier (1 or more)
+
 "ab+" "abbbbb" "abbbbb"
 "a+b" "aaaaab" "aaaaab"
 "a+b+" "aabb" "aabb"
@@ -22,6 +25,7 @@
 "a+?b+?" "aabb" "aab"
 
     * quantifier (0 or more)
+
 "ab*" "abbbbb" "abbbbb"
 "ab*" "a" "a"
 "b*a*b*" "aabb" "aabb"
@@ -31,6 +35,7 @@
 "ba*?b*?" "bbbb" "b"
 
     ? quantifier (0 or 1)
+
 "ab?" "ab" "ab"
 "ab?" "a" "a"
 "ab?c" "abc" "abc"
@@ -41,6 +46,7 @@
 "ab??c" "abc" "abc"
 
     Character classes
+
 "gr[ae]y" "grey" "grey"
 "gr[ae]y" "gray" "gray"
 "gr[ae]y" "griy" ""
@@ -49,12 +55,14 @@
 "[0-9]+" "1234567890" "1234567890"
 
     Reverse character classes
+
 "[^A-Za-z ]+" "123456789" "123456789"
 "c[^ie]t" "cat" "cat"
 "c[^ie]t" "cut" "cut"
 "c[^ie]t" "cit" ""
 
     Alternation
+
 "abc|def" "abc" "abc"
 "abc|def" "def" "def"
 "(abc|def)+" "abcdefdefabc" "abcdefdefabc"
@@ -63,12 +71,14 @@
 "I like (cat|dog)s very much" "I like dogs very much" "I like dogs very much"
 
     Misc
+
 "^abc" "abc" "abc"
 "^abc" "aabc" ""
 "a\tb" "a	b" "a	b"
 "\d\d/\d\d/\d\d\d\d" "01/01/1970" "01/01/1970"
 
     Slightly more complex (involving capturing groups)
+
 "(one ?(two)? ?)+" "one two one one two two" "one two one one two "
 "Feb(ruary)? [0-9][0-9](nd)?" "Feb 22" "Feb 22"
 "Feb(ruary)? [0-9][0-9](nd)?" "February 22" "February 22"
