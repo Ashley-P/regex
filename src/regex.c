@@ -444,7 +444,7 @@ char *perform_regex(State *start, char *string) {
 
     // State *s = start->next1; // This is the state we are checking
     State *s = start;
-    char *rtn_str = malloc(sizeof(char) * MAX_STRING_SIZE); // This get's free by the caller of regex()
+    char *rtn_str = malloc(sizeof(char) * MAX_STRING_SIZE); // This get's freed by the caller of regex()
     char *sp = rtn_str;
 
     while (1) {
@@ -797,10 +797,10 @@ State *parse_escapes(char **p) {
         case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9': 
             regex_log("\nBack references are not implemented yet: ");
             if (peek_ch((*p) + 1) > '0' && peek_ch((*p) + 1) < '9') { // We accept back refs upto 99
-                regex_log("ref no. %c%c", peek_ch(*p), peek_ch((*p) + 1));
+                regex_log("ref no. %c%c\n", peek_ch(*p), peek_ch((*p) + 1));
                 *p = (*p) + 2;
             } else {
-                regex_log("ref no. %c", peek_ch(*p));
+                regex_log("ref no. %c\n", peek_ch(*p));
                 *p = (*p) + 1;
             }
 
