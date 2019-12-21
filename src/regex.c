@@ -53,6 +53,7 @@ typedef enum {
     S_META_CH,
     S_CCLASS,
     S_REVERSE_CCLASS,
+    S_BACK_REFERENCE,
 } StateType;
 
 typedef union StateData_ {
@@ -95,9 +96,6 @@ typedef struct BacktrackData_ {
     State *s;
 
     // We also gotta keep track of where the capturing groups are upto
-    //int icg[MAX_CAPTURE_GROUPS];
-    //int str_ptrs[MAX_CAPTURE_GROUPS];
-    //char cgs[MAX_CAPTURE_GROUPS][MAX_STRING_SIZE];
     struct CaptureGroupData_ *cgd;
 } BacktrackData;
 
@@ -164,7 +162,6 @@ void regex_log(char *msg, ...);
 
 char *regex(char *pattern, char *string, unsigned int opts) {
     // Handle options - should be moved to it's own function
-    //if (options & REGEX_SUPPRESS_LOGGING) suppress_logging = 1;
     handle_options(opts);
     regex_free = malloc(sizeof(void *) * MAX_STACK_SIZE * 10);
     rfp = regex_free;
@@ -243,9 +240,6 @@ Fragment parse_pattern(char **pattern) {
     Fragment volatile a, b; // These get optimized out and it breaks alternation
     int cap_group_tmp; // For use when we get '('
 
-    //const char *str_start = *pattern;
-    //char *(*pattern) = *pattern; // string pointer
-
     // Creating the first state
     // If we are in a capturing group, we change the data
     StateData data;
@@ -264,8 +258,6 @@ Fragment parse_pattern(char **pattern) {
 
                 // check if we should link this fragment with the one before it
                 fp = link_fragments(fp, (*pattern));
-                //regex_log("State %p, Type = %s, ch = %c\n",
-                        //(void *) s, state_type_to_string(s->type), s->data.ch);
                 (*pattern)++;
                 break;
 
@@ -420,7 +412,6 @@ char *perform_regex(State *start, char *string) {
 
     // Backtracking related
     BacktrackData *backtrack_stack = malloc(sizeof(BacktrackData) * MAX_STACK_SIZE);
-    //BacktrackData backtrack_stack[MAX_STACK_SIZE];
     BacktrackData *btp = backtrack_stack;
     BacktrackData b;
     int do_backtrack = 0;
@@ -428,22 +419,16 @@ char *perform_regex(State *start, char *string) {
     // Capturing group related - This is the worst and only way I can imagine doing this
     // We capture upto 99 groups used to check whether we should be collecting
     CaptureGroupData *cgd = malloc(sizeof(CaptureGroupData));
-    //int in_capture_group[MAX_CAPTURE_GROUPS];
-    //int str_ptrs[MAX_CAPTURE_GROUPS]; // Used to insert the characters 
-    //char cg_string[MAX_CAPTURE_GROUPS][MAX_STRING_SIZE]; // The string captured by the group
 
 
     for (int i = 0; i < MAX_CAPTURE_GROUPS; i++) {
+        // Defaulting values
         cgd->icg[i] = 0;
         cgd->str_ptrs[i] = 0;
         cgd->cgs[i][0] = '\0';
-        //in_capture_group[i] = 0; // Making sure the values are at default
-        //str_ptrs[i] = 0;
-        //cg_string[i][0] = '\0'; // Good drills
     }
 
-    // State *s = start->next1; // This is the state we are checking
-    State *s = start;
+    State *s = start; // This is the state we are checking
     char *rtn_str = malloc(sizeof(char) * MAX_STRING_SIZE); // This get's freed by the caller of regex()
     char *sp = rtn_str;
 
@@ -577,11 +562,7 @@ char *perform_regex(State *start, char *string) {
                 string = b.string;
                 sp = b.sp;
                 s = b.s;
-                //free(cgd);
                 *cgd = *b.cgd;
-                //memcpy(in_capture_group, b.icg, sizeof(int) * MAX_CAPTURE_GROUPS);
-                //memcpy(str_ptrs, b.str_ptrs, sizeof(int) * MAX_CAPTURE_GROUPS);
-                //memcpy(cg_string, b.cgs, sizeof(char) * MAX_CAPTURE_GROUPS * MAX_STRING_SIZE);
 
                 regex_log("Backtrack complete: Starting at state %p\n\n", (void *) s);
                 do_backtrack = 0;
@@ -907,9 +888,6 @@ BacktrackData create_backtrack_data(char *string, char *sp, State *s, CaptureGro
     rtn.cgd = malloc(sizeof(CaptureGroupData));
     *rfp++ = rtn.cgd;
     *rtn.cgd = *cgd;
-   // memcpy(rtn.icg, icg, sizeof(int) * MAX_CAPTURE_GROUPS);
-   // memcpy(rtn.str_ptrs, str_ptrs, sizeof(int) * MAX_CAPTURE_GROUPS);
-   // memcpy(rtn.cgs, cgs, sizeof(char) * MAX_CAPTURE_GROUPS * MAX_STRING_SIZE);
     return rtn;
 }
 
@@ -921,6 +899,7 @@ char *state_type_to_string(StateType type) {
         case S_META_CH: return "S_META_CH";
         case S_CCLASS: return "S_CCLASS";
         case S_REVERSE_CCLASS: return "S_REVERSE_CCLASS";
+        case S_BACK_REFERENCE: return "S_BACK_REFERENCE";
         default: return "Unhandled case in state_type_to_string";
     }
 }
