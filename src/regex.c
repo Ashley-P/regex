@@ -57,7 +57,7 @@ typedef enum {
 } StateType;
 
 typedef union StateData_ {
-    char ch; // for literal characters
+    unsigned char ch; // for literal characters
     MetaChType meta; // Meta character types
     char *cclass;
     char cg; // capture group number - negative number means we are leaving the group
@@ -793,7 +793,44 @@ char *create_character_class(char *sp, StateData *data) {
 
             }
             sp += 2;
-        } else // collect as normal
+        } else if (*sp == '\\') {
+            State *s = parse_escapes(&sp); // Utilizing parse_escapes
+            switch (s->type) {
+                case S_REVERSE_CCLASS:
+                    regex_log("reverse cclass\n");
+                    for (char i = 32; i < 127; i++) { // We skip the first lot that we definetly don't match
+                        if (match_ch_str(i, s->data.cclass) == 0) { // We take the char if it isn't in the string
+                            *cp++ = i;
+                        }
+                    }
+                    // Matching specific stuff we skipped
+                    if (match_ch_str(9 , s->data.cclass) == 0) *cp++ = 9;  // tabs
+                    if (match_ch_str(10, s->data.cclass) == 0) *cp++ = 10; // newline 
+                    if (match_ch_str(13, s->data.cclass) == 0) *cp++ = 13; // carriage return 
+
+                    sp++;
+                    break;
+
+                case S_CCLASS:
+                    // We can combine the classes together
+                    ;
+                    char *cclass_p = &s->data.cclass[0];
+                    while (*cclass_p != '\0') *cp++ = *cclass_p++;
+                    sp++;
+                    break;
+
+                case S_LITERAL_CH:
+                    *cp++ = s->data.ch;
+                    sp++;
+                    break;
+
+                default:
+                    regex_log("Unhandled state type \"%s\" in function %s\n",
+                           state_type_to_string(s->type), __func__);
+                    break;
+            }
+        }
+        else // collect as normal
         *cp++ = *sp++; 
             
     }
@@ -806,6 +843,8 @@ char *create_character_class(char *sp, StateData *data) {
 State *parse_escapes(char **p) {
     State *s;
     StateData data;
+
+    regex_log("Parsing escaped character(s)\n");
 
     switch (peek_ch(*p)) {
         case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9': 
@@ -912,7 +951,6 @@ State *parse_escapes(char **p) {
             (*p)++;
             break;
     }
-
     return s;
 }
 
