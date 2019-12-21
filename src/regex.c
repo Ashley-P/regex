@@ -766,7 +766,7 @@ StateList *append_lists(StateList *a, StateList *b) {
 
 char *create_character_class(char *sp, StateData *data) {
     data->cclass = malloc(sizeof(char) * MAX_STRING_SIZE);
-    //*rfp++ = data->cclass;
+    *rfp++ = data->cclass;
     char *cp = &data->cclass[0];
     // @TODO: We don't look for backwards slashes right now
 
