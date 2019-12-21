@@ -120,43 +120,43 @@ static void **rfp; // regex_free pointer
 
 /***** Function Prototypes *****/
 char *regex(char *pattern, char *string, unsigned int opts);
-char *pre_parse_pattern(char *pattern);
-Fragment parse_pattern(char **pattern);
-char *perform_regex(State *start, char *string);
-void capture_group_str_grab(CaptureGroupData *cgd, char ch);
+static char *pre_parse_pattern(char *pattern);
+static Fragment parse_pattern(char **pattern);
+static char *perform_regex(State *start, char *string);
+static void capture_group_str_grab(CaptureGroupData *cgd, char ch);
 
-int check_pattern_correctness(char *pattern);
-int state_altering_check(char *p);
-int character_class_check(char *p);
+static int check_pattern_correctness(char *pattern);
+static int state_altering_check(char *p);
+static int character_class_check(char *p);
 
 
 
 /***** Utility functions *****/
-Fragment *link_fragments(Fragment *fp, char *sp);
-State *create_state(StateType type, StateData data, State * const next1, State * const next2);
-Fragment create_fragment(State *s, StateList *l);
-void point_state_list(StateList *l, State *a);
-StateList *create_state_list(State **first);
-StateList *append_lists(StateList *a, StateList *b);
+static Fragment *link_fragments(Fragment *fp, char *sp);
+static State *create_state(StateType type, StateData data, State * const next1, State * const next2);
+static Fragment create_fragment(State *s, StateList *l);
+static void point_state_list(StateList *l, State *a);
+static StateList *create_state_list(State **first);
+static StateList *append_lists(StateList *a, StateList *b);
 
-char *create_character_class(char *sp, StateData *data);
-State *parse_escapes(char **p);
+static char *create_character_class(char *sp, StateData *data);
+static State *parse_escapes(char **p);
 
-BacktrackData create_backtrack_data(char *string, char *sp, State *s, CaptureGroupData *cgd);
+static BacktrackData create_backtrack_data(char *string, char *sp, State *s, CaptureGroupData *cgd);
 
-char *state_type_to_string(StateType type);
-char *meta_ch_type_to_string(MetaChType type);
+static char *state_type_to_string(StateType type);
+//static char *meta_ch_type_to_string(MetaChType type);
 
-void handle_options(unsigned int opts);
+static void handle_options(unsigned int opts);
 
 
 // String stuff
-int match_ch_str(char ch, char *str);
+static int match_ch_str(char ch, char *str);
 static inline char peek_ch(char *str);
 static inline char reverse_peek_ch(char *str);
 
-void pattern_error(char *p, unsigned int pos, unsigned int range, char *msg, ...);
-void regex_log(char *msg, ...);
+static void pattern_error(char *p, unsigned int pos, unsigned int range, char *msg, ...);
+static void regex_log(char *msg, ...);
 
 
 
@@ -221,11 +221,11 @@ char *regex(char *pattern, char *string, unsigned int opts) {
 
 
 // Changing up the pattern slightly so that the parsing works
-char *pre_parse_pattern(char *pattern) {
+static char *pre_parse_pattern(char *pattern) {
     return pattern;
 }
 
-Fragment parse_pattern(char **pattern) {
+static Fragment parse_pattern(char **pattern) {
     regex_log("\n----- Parsing pattern -----\n");
     //Fragment *stack = malloc(sizeof(Fragment) * MAX_STACK_SIZE);
     Fragment stack[MAX_STACK_SIZE];
@@ -407,7 +407,7 @@ Fragment parse_pattern(char **pattern) {
 }
 
 // Naviagtes the FSM and (should) returns the matched sub-string
-char *perform_regex(State *start, char *string) {
+static char *perform_regex(State *start, char *string) {
     regex_log("\n----- Navigating Finite State Machine -----\n");
 
     // Backtracking related
@@ -605,7 +605,7 @@ char *perform_regex(State *start, char *string) {
 }
 
 // Collects strings inside relevant capture groups
-void capture_group_str_grab(CaptureGroupData *cgd, char ch) {
+static void capture_group_str_grab(CaptureGroupData *cgd, char ch) {
 
     for (int i = 0; i < MAX_CAPTURE_GROUPS; i++) {
         if (cgd->icg[i] == 1) {
@@ -617,7 +617,7 @@ void capture_group_str_grab(CaptureGroupData *cgd, char ch) {
 
 
 // Returns 0 if the pattern is correct
-int check_pattern_correctness(char *pattern) {
+static int check_pattern_correctness(char *pattern) {
     int a = 0;
     a += state_altering_check(pattern);
     a += character_class_check(pattern);
@@ -628,7 +628,7 @@ int check_pattern_correctness(char *pattern) {
  * State altering characters can't be next to each other or at the start of the pattern
  * e.g "ab?+" "+ab"
  */
-int state_altering_check(char *p) {
+static int state_altering_check(char *p) {
     // Checking the beginning of the pattern
 
     switch (*p) {
@@ -666,7 +666,7 @@ int state_altering_check(char *p) {
     return 0;
 }
 
-int character_class_check(char *p) {
+static int character_class_check(char *p) {
     // First we make sure that there is a closing square brace in the pattern
     // @FIXME: a pattern like [A-Z-a] will be parsed incorrectly
     char *c = p - 1;
@@ -714,7 +714,7 @@ int character_class_check(char *p) {
 
 
 /***** Utility functions *****/
-Fragment *link_fragments(Fragment *fp, char *sp) {
+static Fragment *link_fragments(Fragment *fp, char *sp) {
     Fragment a, b;
 
     if (match_ch_str(peek_ch(sp), "?+*") == 0) {
@@ -727,7 +727,7 @@ Fragment *link_fragments(Fragment *fp, char *sp) {
     return fp;
 }
 
-State *create_state(StateType type, StateData data, State * const next1, State * const next2) {
+static State *create_state(StateType type, StateData data, State * const next1, State * const next2) {
     State *a = malloc(sizeof(State));
     *rfp++ = a;
     a->type  = type;
@@ -738,7 +738,7 @@ State *create_state(StateType type, StateData data, State * const next1, State *
     return a;
 }
 
-Fragment create_fragment(State *s, StateList *l) {
+static Fragment create_fragment(State *s, StateList *l) {
     Fragment rtn;
     rtn.start = s;
     rtn.list = l;
@@ -746,13 +746,13 @@ Fragment create_fragment(State *s, StateList *l) {
 }
 
 // The pointers from the first fragment are pointed the the start of the next one
-void point_state_list(StateList *l, State *a) {
+static void point_state_list(StateList *l, State *a) {
     for (int i = 0; i < l->n; i++) {
         *(l->l)[i] = a;
     }
 }
 
-StateList *create_state_list(State **first) {
+static StateList *create_state_list(State **first) {
     StateList *l = malloc(sizeof(StateList));
     *rfp++ = l;
     l->n = 0;
@@ -761,7 +761,7 @@ StateList *create_state_list(State **first) {
     return l;
 }
 
-StateList *append_lists(StateList *a, StateList *b) {
+static StateList *append_lists(StateList *a, StateList *b) {
     StateList *rtn = malloc(sizeof(StateList));
     *rfp++ = rtn;
     rtn->n = 0;
@@ -778,7 +778,7 @@ StateList *append_lists(StateList *a, StateList *b) {
 }
 
 
-char *create_character_class(char *sp, StateData *data) {
+static char *create_character_class(char *sp, StateData *data) {
     data->cclass = malloc(sizeof(char) * MAX_STRING_SIZE);
     *rfp++ = data->cclass;
     char *cp = &data->cclass[0];
@@ -847,7 +847,7 @@ char *create_character_class(char *sp, StateData *data) {
     return sp;
 }
 
-State *parse_escapes(char **p) {
+static State *parse_escapes(char **p) {
     State *s;
     StateData data;
 
@@ -962,7 +962,7 @@ State *parse_escapes(char **p) {
 }
 
 
-BacktrackData create_backtrack_data(char *string, char *sp, State *s, CaptureGroupData *cgd) {
+static BacktrackData create_backtrack_data(char *string, char *sp, State *s, CaptureGroupData *cgd) {
     BacktrackData rtn;
     rtn.string = string;
     rtn.sp = sp;
@@ -974,7 +974,7 @@ BacktrackData create_backtrack_data(char *string, char *sp, State *s, CaptureGro
     return rtn;
 }
 
-char *state_type_to_string(StateType type) {
+static char *state_type_to_string(StateType type) {
     switch (type) {
         case S_FINAL: return "S_FINAL";
         case S_NODE: return "S_NODE";
@@ -987,15 +987,17 @@ char *state_type_to_string(StateType type) {
     }
 }
 
-char *meta_ch_type_to_string(MetaChType type) {
+#if 0
+static char *meta_ch_type_to_string(MetaChType type) {
     switch (type) {
         case M_ANY_CH: return "M_ANY_CH";
         default: return "Unhandled case in meta_ch_type_to_string";
     }
 }
+#endif
 
 // returns 1 in the character is in the string
-int match_ch_str(char ch, char *str) {
+static int match_ch_str(char ch, char *str) {
     int str_len = strlen(str);
 
     for (int i = 0; i < str_len; i++) {
@@ -1014,7 +1016,7 @@ static inline char reverse_peek_ch(char *str) {
 }
 
 // Allows nice printing showing where the error is in the pattern
-void pattern_error(char *p, unsigned int pos, unsigned int range, char *msg, ...) {
+static void pattern_error(char *p, unsigned int pos, unsigned int range, char *msg, ...) {
     static char error_msg[] = "Error in pattern -> ";
     printf("%s%s\n", error_msg, p);
 
@@ -1039,7 +1041,7 @@ void pattern_error(char *p, unsigned int pos, unsigned int range, char *msg, ...
 }
 
 // Let's us easily suppress printing to the screen probably temporary
-void regex_log(char *msg, ...) {
+static void regex_log(char *msg, ...) {
     if (options.suppress_logging) return;
 
     va_list args;
@@ -1049,7 +1051,7 @@ void regex_log(char *msg, ...) {
 }
 
 // Some options can be handled as soon as we enter the function
-void handle_options(unsigned int opts) {
+static void handle_options(unsigned int opts) {
     options.suppress_logging = (opts & REGEX_SUPPRESS_LOGGING) ? 1 : 0;
     options.start_of_string = 0;
 }
