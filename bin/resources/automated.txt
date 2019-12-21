@@ -53,6 +53,7 @@
 "[A-Za-z]+" "Anything I like" "Anything"
 "[A-Za-z ]+" "Anything I like" "Anything I like"
 "[0-9]+" "1234567890" "1234567890"
+"0x[A-F\d]+" "0xFADE1234" "0xFADE1234"
 
     Reverse character classes
 
@@ -69,6 +70,13 @@
 "(abc|def)ghi" "abcghi" "abcghi"
 "abc|def|ghi" "abc" "abc"
 "I like (cat|dog)s very much" "I like dogs very much" "I like dogs very much"
+
+    Backreferences
+
+"(ab)cd\1" "abcdab" "abcdab"
+"(abc( def)?\2)" "abc def def" "abc def def"
+"(abc( def)?\2)" "abc" "abc"
+"I like (.+). I like \1 a lot" "I like dogs. I like dogs a lot" "I like dogs. I like dogs a lot"
 
     Misc
 
