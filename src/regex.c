@@ -436,12 +436,41 @@ char *perform_regex(State *start, char *string) {
         regex_log("State %p, ", (void *) s);
 
         switch (s->type) {
+            case S_BACK_REFERENCE:
+                // If we are inside the capture group we can't reference it e.g (ab\1)
+                if (cgd->icg[s->data.ch - 1] == 1) {
+                    regex_log("Regex engine runtime error: Can't backreference whilst inside the capture group\n");
+                    return "";
+                }
+
+                // Start matching the string in cgs to the supplied string
+                const char *brp = &cgd->cgs[s->data.ch - 1][0]; // Back reference pointer
+                regex_log("Back reference matching\n");
+
+                while (*brp == *string && *brp != '\0' && *string != '\0') {
+                    regex_log("Literal character \"%c\" matched character \"%c\" in string\n", *brp, *string);
+                    brp++;
+                    capture_group_str_grab(cgd, *string);
+                    *sp++ = *string++;
+                }
+                // Making the whole of the backreference has matched
+                if (*brp != '\0') {
+                    regex_log("Literal character \"%c\" did not match character \"%c\" in string\n",
+                            *brp, *string);
+                    do_backtrack = 1;
+                } else if (s->next2)
+                    *btp++ = create_backtrack_data(string, sp, s->next2, cgd);
+
+                s = s->next1;
+                break;
+
             case S_REVERSE_CCLASS:
                 // If we get a match
                 if (!match_ch_str(*string, s->data.cclass) && *string != '\0') {
                     regex_log("Reverse character class \"%s\" matched with character \"%c\" in string \n",
                            s->data.cclass, *string);
 
+                    capture_group_str_grab(cgd, *string);
                     *sp++ = *string++;
                     if (s->next2)
                         *btp++ = create_backtrack_data(string, sp, s->next2, cgd);
@@ -460,6 +489,7 @@ char *perform_regex(State *start, char *string) {
                     regex_log("Character class \"%s\" matched with character \"%c\" in string \n",
                            s->data.cclass, *string);
 
+                    capture_group_str_grab(cgd, *string);
                     *sp++ = *string++;
                     if (s->next2)
                         *btp++ = create_backtrack_data(string, sp, s->next2, cgd);
@@ -480,6 +510,7 @@ char *perform_regex(State *start, char *string) {
                         if (*string != '\0') {
                             regex_log("Meta Character \".\" matched character \"%c\" in string \n", *string);
 
+                            capture_group_str_grab(cgd, *string);
                             *sp++ = *string++;
                             if (s->next2)
                                 *btp++ = create_backtrack_data(string, sp, s->next2, cgd);
@@ -562,9 +593,11 @@ char *perform_regex(State *start, char *string) {
                 string = b.string;
                 sp = b.sp;
                 s = b.s;
+                regex_log("capture_group 1 before backtrack = %s\n", cgd->cgs[0]);
                 *cgd = *b.cgd;
 
                 regex_log("Backtrack complete: Starting at state %p\n\n", (void *) s);
+                regex_log("capture_group 1 after backtrack = %s\n", cgd->cgs[0]);
                 do_backtrack = 0;
             }
         }
@@ -776,17 +809,22 @@ State *parse_escapes(char **p) {
 
     switch (peek_ch(*p)) {
         case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9': 
-            regex_log("\nBack references are not implemented yet: ");
-            if (peek_ch((*p) + 1) > '0' && peek_ch((*p) + 1) < '9') { // We accept back refs upto 99
-                regex_log("ref no. %c%c\n", peek_ch(*p), peek_ch((*p) + 1));
+            ;
+            int backref;
+
+            if (peek_ch((*p) + 1) >= '0' && peek_ch((*p) + 1) <= '9') { // We accept back refs upto 99
+                backref = (peek_ch(*p) - 48) * 10;
+                backref += peek_ch((*p) + 1) - 48;
+                regex_log("ref no. %d\n", backref);
                 *p = (*p) + 2;
             } else {
-                regex_log("ref no. %c\n", peek_ch(*p));
+                backref = peek_ch(*p) - 48;
+                regex_log("ref no. %d\n", backref);
                 *p = (*p) + 1;
             }
 
-            data.ch = '\0';
-            s = create_state(S_NODE, data, NULL, NULL);
+            data.ch = backref;
+            s = create_state(S_BACK_REFERENCE, data, NULL, NULL);
             regex_log("Back reference: State %p, Node State\n", (void *) s);
             break;
 
