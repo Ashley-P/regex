@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <windows.h>
 #include "regex.h"
 
 #define TEST_MAX_STRING_SIZE 100
@@ -9,6 +10,7 @@
 // This file incldues some automated tests
 static int test_num = 1;
 static char default_fp[] = "./bin/resources/automated.txt";
+static LARGE_INTEGER freq;
 
 
 /***** Function Prototypes *****/
@@ -48,6 +50,13 @@ int main(int argc, char *argv[]) {
     char match[TEST_MAX_STRING_SIZE];
     //char line[TEST_MAX_STRING_SIZE];
     int i;
+
+    // Time stamping
+    LARGE_INTEGER startt, endt, elapsedt;
+    QueryPerformanceFrequency(&freq); 
+    QueryPerformanceCounter(&startt);
+
+    // We don't check whether the test files are correct so don't be wrong
     do {
         i = parse_line(f, pattern, string, match);
         //printf("Pattern -> \"%s\" : String -> \"%s\" : Match -> \"%s\"\n", pattern, string, match);
@@ -59,16 +68,16 @@ int main(int argc, char *argv[]) {
         } else if (i == 2)
             continue;
     } while (i != 0);
-    // We don't check whether the test files are correct so don't be wrong
-#if 0
-    int test_num = 0;
-    while (fscanf(f, "%s%s%s", pattern, string, match) != EOF) {
-        assert(run_test(pattern, string, match));
-        test_num++;
-    }
-#endif
+
     // If we get here then everything is complete
-    printf("\n%d tests completed successfully!\n", test_num - 1);
+    QueryPerformanceCounter(&endt);
+    elapsedt.QuadPart = endt.QuadPart - startt.QuadPart;
+
+    // Elapsed in milliseconds
+    elapsedt.QuadPart *= 1000000;
+    elapsedt.QuadPart /= freq.QuadPart;
+
+    printf("\n%d tests completed successfully in %li microseconds\n", test_num - 1, (long) elapsedt.QuadPart);
 }
 
 // returns 1 if the value is what it should be
@@ -76,8 +85,22 @@ int run_test(char *pattern, char *string, char *match) {
     printf("----- Test %d -----\n", test_num);
     printf("Pattern -> \"%s\" : String -> \"%s\" : Match -> \"%s\"\n", pattern, string, match);
     char *str;
+
+    LARGE_INTEGER startt, endt, elapsedt;
+    QueryPerformanceCounter(&startt);
+
     str = regex(pattern, string, REGEX_SUPPRESS_LOGGING);
-    printf("%s -> %s\n\n", pattern, str);
+
+    QueryPerformanceCounter(&endt);
+    elapsedt.QuadPart = endt.QuadPart - startt.QuadPart;
+
+    // Elapsed in milliseconds
+    elapsedt.QuadPart *= 1000000;
+    elapsedt.QuadPart /= freq.QuadPart;
+
+    printf("%s -> %s\n", pattern, str);
+    printf("Test completed in %li microseconds\n\n", (long) elapsedt.QuadPart);
+
     if (!strcmp(str, match)) {
         free(str);
         return 1;
