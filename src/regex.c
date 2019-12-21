@@ -679,7 +679,7 @@ int character_class_check(char *p) {
                 inside_cclass = 0;
 
             // We can check hyphens in here too
-            if (*c == '-' && *(c - 1) != '\\') { // Checking if it's escaped
+            if (*c == '-' && *(c - 1) != '\\' && *(c - 2) != '-') { // Checking if it's escaped and not intruding
                 if (*(c - 2) != '\\' && match_ch_str(*(c + 1), "]\\") == 0) { // Checking escapes
                     if (*(c + 1) < *(c - 1)) {
                         // should be range pattern error
@@ -786,13 +786,20 @@ char *create_character_class(char *sp, StateData *data) {
 
     while (*sp != ']') {
         if (*sp == '-') {
-            if (*(sp - 1) != '\\' && *(sp - 1) != '[' && peek_ch(sp) != '\\' && peek_ch(sp) != ']') {
+            if (*(sp - 1) != '\\'   // making sure it's not escaped
+             && *(sp - 1) != '['    // checking we aren't at the start
+             && peek_ch(sp) != '\\' // more escape checking
+             && peek_ch(sp) != ']'  // Checking we aren't at the end
+             && *(sp - 2) != '-') { // Making sure we aren't intruding on another range e.g A-Z-a
                 // We've already collected the first character
                 for (int i = *(sp - 1) + 1; i <= peek_ch(sp); i++)
                     *cp++ = i;
 
+                sp += 2;
+            } else {
+                *cp++ = *sp++;
             }
-            sp += 2;
+
         } else if (*sp == '\\') {
             State *s = parse_escapes(&sp); // Utilizing parse_escapes
             switch (s->type) {
