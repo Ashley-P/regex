@@ -114,6 +114,7 @@ static int capturing_group = 0;
 // ezpz way to free stuff
 static void **regex_free;
 static void **rfp; // regex_free pointer
+static Fragment err_fragment = {NULL, NULL};
 
 
 
@@ -141,6 +142,8 @@ static StateList *append_lists(StateList *a, StateList *b);
 
 static char *create_character_class(char *sp, StateData *data);
 static State *parse_escapes(char **p);
+
+static int get_arbitrary_quantifier(char **p, int *a, int *b);
 
 static BacktrackData create_backtrack_data(char *string, char *sp, State *s, CaptureGroupData *cgd);
 
@@ -176,6 +179,12 @@ char *regex(char *pattern, char *string, unsigned int opts) {
 
     char *new_pattern = pre_parse_pattern(pattern);
     Fragment fsm = parse_pattern(&new_pattern);
+    // If we get back an error fragment then something's gone wrong
+    if (fsm.start == NULL) {
+        regex_log("Aborting regex\n");
+        return "";
+    }
+
     State *start = fsm.start;
 
     // Adding the final state to the final fsm
@@ -252,6 +261,31 @@ static Fragment parse_pattern(char **pattern) {
 
     while (*(*pattern) != '\0') {
         switch (*(*pattern)) {
+            case '{': // Arbitrary quantifiers
+                regex_log("Arbitrary quantifier\n");
+                int aq1, aq2;
+                if (get_arbitrary_quantifier(pattern, &aq1, &aq2)) {
+                    if (aq1 > aq2 && aq2 > 0) {
+                        regex_log("Arbitrary quantifier minimum \"%d\" is greater than the maximum \"%d\"\n",
+                                aq1, aq2);
+                        return err_fragment;
+                    }
+
+                    if (aq1 == 0 && aq2 == -1) { // edge case {0}
+                        regex_log("Edge case {0} handled\n");
+                        fp--;
+
+                    } else if (aq2 == -1) { // exact quantifier
+                    } else if (aq2 == -2) { // open ended quantifier
+                    } else { // arbitrary quantifier
+                    }
+
+                } else {
+                    regex_log("Badly formatted arbitrary quantifier, parsing as literal characters\n");
+                    goto def;
+                }
+                break;
+
             case '\\': // Escaped characters
                 s = parse_escapes(pattern);
                 *fp++ = create_fragment(s, create_state_list(&s->next1));
@@ -389,6 +423,7 @@ static Fragment parse_pattern(char **pattern) {
                 break;
 
             default: // Normal characters
+                def:
                 data.ch = *(*pattern);
                 s = create_state(S_LITERAL_CH, data, NULL, NULL);
                 *fp++ = create_fragment(s, create_state_list(&s->next1));
@@ -399,8 +434,8 @@ static Fragment parse_pattern(char **pattern) {
                         (void *) s, state_type_to_string(s->type), s->data.ch);
                 (*pattern)++;
                 break;
-        }
-    }
+        } // Switch
+    } // While
 
 
     return stack[0];
@@ -716,8 +751,18 @@ static int character_class_check(char *p) {
 /***** Utility functions *****/
 static Fragment *link_fragments(Fragment *fp, char *sp) {
     Fragment a, b;
+    int tmpa, tmpb;
+    char *tmpc = sp;
+    if (peek_ch(sp) == '{') {// Check if it's a quantifier
+        if (get_arbitrary_quantifier(&tmpc, &tmpa, &tmpb) == 1) {
+            regex_log("we in here\n");
+            b = *--fp;
+            a = *--fp;
+            point_state_list(a.list, b.start);
+            *fp++ = create_fragment(a.start, b.list);
+        }
 
-    if (match_ch_str(peek_ch(sp), "?+*") == 0) {
+    } else if (match_ch_str(peek_ch(sp), "?+*") == 0) {
         b = *--fp;
         a = *--fp;
         point_state_list(a.list, b.start);
@@ -959,6 +1004,48 @@ static State *parse_escapes(char **p) {
             break;
     }
     return s;
+}
+
+// Returns 1 on success
+static int get_arbitrary_quantifier(char **p, int *a, int *b) {
+    char *pp = *p + 1; // Jump inside the brace
+
+    char a_str[MAX_STRING_SIZE];
+    char b_str[MAX_STRING_SIZE];
+    char *str_ptr = &a_str[0];
+
+    while (match_ch_str(*pp, "0123456789") == 1) *str_ptr++ = *pp++;
+
+    if (*pp == '}') { // exact quantifier e.g {2}
+        *a = atoi(a_str);
+        *b = -1;
+
+    } else if (*pp == ',') {
+
+        if (*(pp + 1) == '}') { // open ended quantifier e.g {2,}
+            *a = atoi(a_str);
+            *b = -2;
+
+        } else { // arbitrary quantifier e.g {2,4}
+            // Move past comma
+            pp++;
+            str_ptr = b_str;
+            while (match_ch_str(*pp, "0123456789") == 1) *str_ptr++ = *pp++;
+            if (*pp == '}') {
+                *a = atoi(a_str);
+                *b = atoi(b_str);
+
+            } else { // Messed up
+                return 0;
+            }
+        }
+    } else { // Messed up
+        return 0;
+    }
+    *p = pp + 1;
+    regex_log("debuggy stuff\n");
+    regex_log("a %d b %d p %c\n", *a, *b, **p);
+    return 1;
 }
 
 
