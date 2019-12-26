@@ -78,6 +78,12 @@
 "(abc( def)?\2)" "abc" "abc"
 "I like (.+). I like \1 a lot" "I like dogs. I like dogs a lot" "I like dogs. I like dogs a lot"
 
+    Arbitrary Quantifier
+"ab{0}" "a" "a"
+"a{10}" "aaaaaaaaaa" "aaaaaaaaaa"
+"co{2}l" "coool" ""
+"co{2}l" "col" ""
+
     Misc
 
 "^abc" "abc" "abc"

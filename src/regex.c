@@ -19,6 +19,7 @@
 
 
 
+#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,10 +44,20 @@ typedef enum {
     M_ANY_CH = 1, // .
 } MetaChType;
 
+typedef struct AQData_ {
+    unsigned int max;
+    unsigned int min;
+    unsigned int visited;
+             int lazy;
+
+} AQData;
+
 typedef enum {
     // Special States
     S_FINAL = 1,
     S_NODE,
+    S_CG_NODE, // Store capture group data
+    S_AQ_NODE,
 
     // Normal States
     S_LITERAL_CH,
@@ -61,6 +72,7 @@ typedef union StateData_ {
     MetaChType meta; // Meta character types
     char *cclass;
     char cg; // capture group number - negative number means we are leaving the group
+    struct AQData_ aq;
 } StateData;
 
 typedef struct State_ {
@@ -253,8 +265,14 @@ static Fragment parse_pattern(char **pattern) {
     // If we are in a capturing group, we change the data
     StateData data;
     data.cg = capturing_group;
-    State *s = create_state(S_NODE, data, NULL, NULL);
-    regex_log("Start of parse_pattern: State %p, Node State\n", (void *) s);
+    State *s;
+    if (capturing_group != 0) {
+        s = create_state(S_CG_NODE, data, NULL, NULL);
+        regex_log("Start of parse_pattern: State %p, Capture Group Node State\n", (void *) s);
+    } else {
+        s = create_state(S_NODE, data, NULL, NULL);
+        regex_log("Start of parse_pattern: State %p, Node State\n", (void *) s);
+    }
     // a start for the entire fragment stack
 
     *fp++ = create_fragment(s, create_state_list(&s->next1));
@@ -263,7 +281,9 @@ static Fragment parse_pattern(char **pattern) {
         switch (*(*pattern)) {
             case '{': // Arbitrary quantifiers
                 regex_log("Arbitrary quantifier\n");
+                data.aq.visited = -1;
                 int aq1, aq2;
+
                 if (get_arbitrary_quantifier(pattern, &aq1, &aq2)) {
                     if (aq1 > aq2 && aq2 > 0) {
                         regex_log("Arbitrary quantifier minimum \"%d\" is greater than the maximum \"%d\"\n",
@@ -273,11 +293,27 @@ static Fragment parse_pattern(char **pattern) {
 
                     if (aq1 == 0 && aq2 == -1) { // edge case {0}
                         regex_log("Edge case {0} handled\n");
+                        (*pattern)++;
                         fp--;
 
-                    } else if (aq2 == -1) { // exact quantifier
+                    } else if (aq2 == -1) { // exact quantifier that isn't {0}
+                        data.aq.max = data.aq.min = aq1;
+                        // Works the same as case '+'
+                        a = *--fp;
+                        s = create_state(S_AQ_NODE, data, a.start, NULL);
+                        point_state_list(a.list, s);
+                        *fp++ = create_fragment(s, create_state_list(&s->next2));
+                        fp = link_fragments(fp, (*pattern));
+                        (*pattern)++;
+                        regex_log("Arbitray Quantifier (Exact): State %p, AQ Node State aq max %u, aq min %u\n",
+                                (void *) s, data.aq.max, data.aq.min);
+                        
                     } else if (aq2 == -2) { // open ended quantifier
+                        data.aq.max = UINT_MAX;
+                        data.aq.min = aq1;
                     } else { // arbitrary quantifier
+                        data.aq.max = aq2;
+                        data.aq.min = aq1;
                     }
 
                 } else {
@@ -307,7 +343,7 @@ static Fragment parse_pattern(char **pattern) {
 
                 a = parse_pattern(pattern); // Collect everything inside the parentheses
                 data.cg = 0 - cap_group_tmp; // negating the number to show we are leaving the group
-                s = create_state(S_NODE, data, NULL, NULL);
+                s = create_state(S_CG_NODE, data, NULL, NULL);
                 point_state_list(a.list, s);
                 *fp++ = create_fragment(a.start, create_state_list(&s->next1));
                 
@@ -597,6 +633,14 @@ static char *perform_regex(State *start, char *string) {
                 return rtn_str;
             
             case S_NODE:
+                regex_log("Node State, cg = %d, next1 = %p, next2 = %p\n",
+                    s->data.cg, (void *) s->next1, (void *) s->next2);
+                if (s->next2)
+                    *btp++ = create_backtrack_data(string, sp, s->next2, cgd);
+                s = s->next1;
+                break;
+
+            case S_CG_NODE:
                 if (s->data.cg > 0) {
                     // We only collect once, so "(abc)+" shouldn't result in "abcabc" etc for the capture string
                     if (cgd->icg[s->data.cg - 1] == 0)
@@ -605,12 +649,40 @@ static char *perform_regex(State *start, char *string) {
                     // 2 let's us know that we've already been here
                     cgd->icg[(s->data.cg * (-1)) - 1] = 2;
 
-                regex_log("Node State, cg = %d, next1 = %p, next2 = %p\n",
+                regex_log("Capture Group Node State, cg = %d, next1 = %p, next2 = %p\n",
                     s->data.cg, (void *) s->next1, (void *) s->next2);
                 if (s->next2)
                     *btp++ = create_backtrack_data(string, sp, s->next2, cgd);
                 s = s->next1;
                 break;
+
+            case S_AQ_NODE:
+                s->data.aq.visited += 1;
+                if (s->data.aq.visited < s->data.aq.min) {
+                    // Laziness isn't implemented yet so we assume that next1 links back correctly
+                    // We don't store the backtracking data here because we are pretending next2
+                    // Doesn't go anywhere
+                    regex_log("Arbitrary Quantifier Node State, min = %i, max = %i, visited = %i ",
+                            s->data.aq.min, s->data.aq.max, s->data.aq.visited);
+                    regex_log("next1 = %p, next2 = %p\n", (void *) s->next1, (void *) s->next2);
+                    regex_log("Below minimum\n");
+                    s = s->next1;
+
+                } else if (s->data.aq.visited > s->data.aq.max) {
+                    // If we go past we should backtrack
+                    regex_log("Arbitrary Quantifier Node State, min = %i, max = %i, visited = %i ",
+                            s->data.aq.min, s->data.aq.max, s->data.aq.visited);
+                    regex_log("next1 = %p, next2 = %p\n", (void *) s->next1, (void *) s->next2);
+                    regex_log("Went past maximum\n");
+                    do_backtrack = 1;
+
+                } else {
+                    if (s->next2)
+                        *btp++ = create_backtrack_data(string, sp, s->next2, cgd);
+                    s = s->next1;
+                }
+                break;
+
             default:
                 regex_log("Shouldn't hit this\n");
                 return "";
@@ -1042,7 +1114,7 @@ static int get_arbitrary_quantifier(char **p, int *a, int *b) {
     } else { // Messed up
         return 0;
     }
-    *p = pp + 1;
+    *p = pp; // We should end on the closing brace
     regex_log("debuggy stuff\n");
     regex_log("a %d b %d p %c\n", *a, *b, **p);
     return 1;

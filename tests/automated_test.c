@@ -5,7 +5,7 @@
 #include <windows.h>
 #include "regex.h"
 
-#define TEST_MAX_STRING_SIZE 100
+#define TEST_MAX_STRING_SIZE 1000
 
 // This file incldues some automated tests
 static int test_num = 1;
