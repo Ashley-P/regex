@@ -11,6 +11,7 @@
 static int test_num = 1;
 static char default_fp[] = "./bin/resources/automated.txt";
 static LARGE_INTEGER freq;
+static LARGE_INTEGER total;
 
 
 /***** Function Prototypes *****/
@@ -22,6 +23,9 @@ int count_quotations(char *s);
 
 
 int main(int argc, char *argv[]) {
+    total.QuadPart = 0;
+
+
     // We expect a filepath, but if there is nothing then we just use a default one
     FILE *f;
 
@@ -52,9 +56,7 @@ int main(int argc, char *argv[]) {
     int i;
 
     // Time stamping
-    LARGE_INTEGER startt, endt, elapsedt;
     QueryPerformanceFrequency(&freq); 
-    QueryPerformanceCounter(&startt);
 
     // We don't check whether the test files are correct so don't be wrong
     do {
@@ -70,14 +72,12 @@ int main(int argc, char *argv[]) {
     } while (i != 0);
 
     // If we get here then everything is complete
-    QueryPerformanceCounter(&endt);
-    elapsedt.QuadPart = endt.QuadPart - startt.QuadPart;
 
     // Elapsed in milliseconds
-    elapsedt.QuadPart *= 1000000;
-    elapsedt.QuadPart /= freq.QuadPart;
+    total.QuadPart *= 1000000;
+    total.QuadPart /= freq.QuadPart;
 
-    printf("\n%d tests completed successfully in %li microseconds\n", test_num - 1, (long) elapsedt.QuadPart);
+    printf("\n%d tests completed successfully in %li microseconds\n", test_num - 1, (long) total.QuadPart);
 }
 
 // returns 1 if the value is what it should be
@@ -93,6 +93,7 @@ int run_test(char *pattern, char *string, char *match) {
 
     QueryPerformanceCounter(&endt);
     elapsedt.QuadPart = endt.QuadPart - startt.QuadPart;
+    total.QuadPart += elapsedt.QuadPart;
 
     // Elapsed in milliseconds
     elapsedt.QuadPart *= 1000000;
