@@ -30,9 +30,12 @@
 
 
 /***** Defines *****/
-#define MAX_STACK_SIZE 64
-#define MAX_STRING_SIZE 256
+#define MAX_STACK_SIZE     64
+#define MAX_STRING_SIZE    256
 #define MAX_CAPTURE_GROUPS 100 // It's actually 99 but it's easier than putting + 1 everywhere
+
+#define EXACT_QUANTIFIER     -1
+#define OPEN_ENDED_QUANTIFIER -2
 
 
 /***** Datatypes *****/
@@ -49,7 +52,6 @@ typedef struct AQData_ {
     unsigned int min;
     unsigned int visited;
              int lazy;
-
 } AQData;
 
 typedef enum {
@@ -281,14 +283,23 @@ static Fragment parse_pattern(char **pattern) {
         switch (*(*pattern)) {
             case '{': // Arbitrary quantifiers
                 regex_log("Arbitrary quantifier\n");
-                data.aq.visited = -1;
+                data.aq.visited = UINT_MAX; // Overflows back to 0 on first visit
                 int aq1, aq2;
 
                 if (get_arbitrary_quantifier(pattern, &aq1, &aq2)) {
+
+
                     if (aq1 > aq2 && aq2 > 0) {
                         regex_log("Arbitrary quantifier minimum \"%d\" is greater than the maximum \"%d\"\n",
                                 aq1, aq2);
                         return err_fragment;
+                    }
+
+                    if (peek_ch(*pattern) == '?') {
+                        (*pattern)++; // Moving onto the question mark
+                        data.aq.lazy = 1;
+                    } else {
+                        data.aq.lazy = 0;
                     }
 
                     if (aq1 == 0 && aq2 == -1) { // edge case {0}
@@ -296,24 +307,29 @@ static Fragment parse_pattern(char **pattern) {
                         (*pattern)++;
                         fp--;
 
-                    } else if (aq2 == -1) { // exact quantifier that isn't {0}
-                        data.aq.max = data.aq.min = aq1;
+                    } else if (aq1 == 0) { // exact/open-ended/arbitrary quantifier that start with zero 
+                        // Realistically won't hit UINT_MAX
+                        //aq2 == OPEN_ENDED_QUANTIFIER ? data.aq.max = UINT_MAX : data.aq.max = aq2;
+                        data.aq.min = aq1;
+
+                    } else { // exact/open-ended/arbitrary quantifier that start non zero 
+                        data.aq.min = aq1;
+                        data.aq.max = (aq2 == EXACT_QUANTIFIER) ? (unsigned int) aq1
+                               : (aq2 == OPEN_ENDED_QUANTIFIER) ? UINT_MAX : (unsigned int) aq2;
+
                         // Works the same as case '+'
                         a = *--fp;
-                        s = create_state(S_AQ_NODE, data, a.start, NULL);
+                        s = data.aq.lazy == 0 ? create_state(S_AQ_NODE, data, a.start, NULL)
+                                              : create_state(S_AQ_NODE, data, NULL, a.start);
                         point_state_list(a.list, s);
-                        *fp++ = create_fragment(s, create_state_list(&s->next2));
+                        *fp++ = data.aq.lazy == 0 ? create_fragment(s, create_state_list(&s->next2))
+                                                  : create_fragment(s, create_state_list(&s->next1));
+
                         fp = link_fragments(fp, (*pattern));
                         (*pattern)++;
-                        regex_log("Arbitray Quantifier (Exact): State %p, AQ Node State aq max %u, aq min %u\n",
+                        regex_log("Arbitray Quantifier: State %p, AQ Node State aq max %u, aq min %u",
                                 (void *) s, data.aq.max, data.aq.min);
-                        
-                    } else if (aq2 == -2) { // open ended quantifier
-                        data.aq.max = UINT_MAX;
-                        data.aq.min = aq1;
-                    } else { // arbitrary quantifier
-                        data.aq.max = aq2;
-                        data.aq.min = aq1;
+                        regex_log(", lazy = %s\n", data.aq.lazy == 1 ? "Yes" : "No");
                     }
 
                 } else {
@@ -662,16 +678,16 @@ static char *perform_regex(State *start, char *string) {
                     // Laziness isn't implemented yet so we assume that next1 links back correctly
                     // We don't store the backtracking data here because we are pretending next2
                     // Doesn't go anywhere
-                    regex_log("Arbitrary Quantifier Node State, min = %i, max = %i, visited = %i ",
-                            s->data.aq.min, s->data.aq.max, s->data.aq.visited);
+                    regex_log("Arbitrary Quantifier Node State, max = %u, min = %u, visited = %i ",
+                            s->data.aq.max, s->data.aq.min, s->data.aq.visited);
                     regex_log("next1 = %p, next2 = %p\n", (void *) s->next1, (void *) s->next2);
                     regex_log("Below minimum\n");
-                    s = s->next1;
+                    s = (s->data.aq.lazy == 0) ? s->next1 : s->next2;
 
                 } else if (s->data.aq.visited > s->data.aq.max) {
                     // If we go past we should backtrack
-                    regex_log("Arbitrary Quantifier Node State, min = %i, max = %i, visited = %i ",
-                            s->data.aq.min, s->data.aq.max, s->data.aq.visited);
+                    regex_log("Arbitrary Quantifier Node State, max = %u, min = %u, visited = %i ",
+                            s->data.aq.max, s->data.aq.min, s->data.aq.visited);
                     regex_log("next1 = %p, next2 = %p\n", (void *) s->next1, (void *) s->next2);
                     regex_log("Went past maximum\n");
                     do_backtrack = 1;
@@ -680,6 +696,17 @@ static char *perform_regex(State *start, char *string) {
                     if (s->next2)
                         *btp++ = create_backtrack_data(string, sp, s->next2, cgd);
                     s = s->next1;
+#if 0
+                    if (s->data.aq.lazy == 0) {
+                        if (s->next2)
+                            *btp++ = create_backtrack_data(string, sp, s->next2, cgd);
+                        s = s->next1;
+                    } else {
+                        if (s->next1)
+                            *btp++ = create_backtrack_data(string, sp, s->next1, cgd);
+                        s = s->next2;
+                    }
+#endif
                 }
                 break;
 
@@ -1090,13 +1117,14 @@ static int get_arbitrary_quantifier(char **p, int *a, int *b) {
 
     if (*pp == '}') { // exact quantifier e.g {2}
         *a = atoi(a_str);
-        *b = -1;
+        *b = EXACT_QUANTIFIER;
 
     } else if (*pp == ',') {
 
         if (*(pp + 1) == '}') { // open ended quantifier e.g {2,}
             *a = atoi(a_str);
-            *b = -2;
+            *b = OPEN_ENDED_QUANTIFIER;
+            pp++;
 
         } else { // arbitrary quantifier e.g {2,4}
             // Move past comma

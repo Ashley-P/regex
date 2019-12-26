@@ -83,6 +83,12 @@
 "a{10}" "aaaaaaaaaa" "aaaaaaaaaa"
 "co{2}l" "coool" ""
 "co{2}l" "col" ""
+"ba{2,4}" "ba" ""
+"ba{2,4}" "baaaa" "baaaa"
+"ba{2,4}?" "baaaa" "baa"
+"ba{2,}" "baaaaa" "baaaaa"
+"ba{2,}?" "baa" "baa"
+
 
     Misc
 
