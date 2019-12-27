@@ -33,6 +33,7 @@
 #define MAX_STACK_SIZE     64
 #define MAX_STRING_SIZE    256
 #define MAX_CAPTURE_GROUPS 100 // It's actually 99 but it's easier than putting + 1 everywhere
+#define MAX_REGEX_MALLOC   10000
 
 #define EXACT_QUANTIFIER     -1
 #define OPEN_ENDED_QUANTIFIER -2
@@ -180,7 +181,7 @@ static void regex_log(char *msg, ...);
 char *regex(char *pattern, char *string, unsigned int opts) {
     // Handle options - should be moved to it's own function
     handle_options(opts);
-    regex_free = malloc(sizeof(void *) * MAX_STACK_SIZE * 10);
+    regex_free = malloc(sizeof(void *) * MAX_REGEX_MALLOC);
     rfp = regex_free;
 
     // Echoing back for no real reason
